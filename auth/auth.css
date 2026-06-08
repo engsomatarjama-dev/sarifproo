@@ -1,0 +1,118 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #162033;
+  background: #f4f7fb;
+}
+
+.page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.panel {
+  width: min(100%, 460px);
+  padding: 28px;
+  border: 1px solid #d9e2ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 44px rgba(22, 32, 51, 0.09);
+}
+
+.brand {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #126b62;
+}
+
+h1 {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.15;
+}
+
+p {
+  margin: 14px 0 0;
+  color: #526176;
+  font-size: 15px;
+  line-height: 1.55;
+}
+
+form {
+  display: grid;
+  gap: 14px;
+  margin-top: 22px;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+input {
+  width: 100%;
+  min-height: 46px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font: inherit;
+  color: #162033;
+  background: #ffffff;
+}
+
+input:focus {
+  border-color: #126b62;
+  outline: 3px solid rgba(18, 107, 98, 0.14);
+}
+
+button {
+  min-height: 46px;
+  border: 0;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font: inherit;
+  font-weight: 800;
+  color: #ffffff;
+  background: #126b62;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.message {
+  margin-top: 16px;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.message.success {
+  color: #075e40;
+  background: #dcfce7;
+}
+
+.message.error {
+  color: #991b1b;
+  background: #fee2e2;
+}
+
+.hidden {
+  display: none;
+}

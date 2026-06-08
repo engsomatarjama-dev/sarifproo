@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SarifPro Account Confirmed</title>
+    <link rel="stylesheet" href="../auth.css" />
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel" aria-live="polite">
+        <p class="brand">SarifPro</p>
+        <h1>Account confirmed</h1>
+        <p id="confirmation-message">
+          Your account has been confirmed successfully. You can now return to the SarifPro app and login using your email and password.
+        </p>
+      </section>
+    </main>
+    <script>
+      const hashParams = new URLSearchParams(window.location.hash.slice(1));
+      const queryParams = new URLSearchParams(window.location.search);
+      const error = hashParams.get('error_description') || queryParams.get('error_description') || hashParams.get('error') || queryParams.get('error');
+
+      if (error) {
+        const message = document.getElementById('confirmation-message');
+        message.className = 'message error';
+        message.textContent = 'This confirmation link could not be completed. Please request a new confirmation email from the SarifPro app.';
+      } else if (window.location.hash) {
+        window.history.replaceState(null, document.title, window.location.pathname);
+      }
+    </script>
+  </body>
+</html>

@@ -1,0 +1,299 @@
+.admin-shell {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 40px 24px 64px;
+}
+
+.admin-header {
+  display: flex;
+  gap: 24px;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 28px;
+}
+
+.admin-header h1 {
+  font-size: clamp(2.5rem, 8vw, 5rem);
+}
+
+.admin-grid {
+  display: grid;
+  gap: 18px;
+}
+
+.admin-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(19, 38, 52, 0.08);
+}
+
+.admin-card-header,
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-end;
+  justify-content: space-between;
+}
+
+.admin-tabs {
+  display: inline-flex;
+  gap: 6px;
+  padding: 4px;
+  margin: 18px 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+}
+
+.tab-button {
+  min-height: 38px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 900;
+  padding: 0 14px;
+}
+
+.tab-button.active {
+  background: var(--brand);
+  color: #fff;
+}
+
+.admin-form,
+.toolbar label {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-form {
+  max-width: 420px;
+}
+
+.search-field {
+  flex: 1 1 320px;
+}
+
+label {
+  color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+input,
+select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  padding: 0 12px;
+}
+
+.admin-button {
+  border: 0;
+  cursor: pointer;
+}
+
+.admin-button.secondary {
+  border: 1px solid var(--line);
+  background: transparent;
+}
+
+.admin-muted {
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.admin-status {
+  min-height: 24px;
+  color: var(--brand);
+  font-weight: 800;
+}
+
+.admin-status.error {
+  color: #b42318;
+}
+
+.hidden {
+  display: none;
+}
+
+.table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin-top: 18px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 900px;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  padding: 12px 10px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+}
+
+td {
+  font-size: 0.92rem;
+}
+
+.request-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.request-actions select {
+  min-width: 112px;
+}
+
+.small-action {
+  min-height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  cursor: pointer;
+  font-weight: 800;
+  padding: 0 10px;
+}
+
+.approve {
+  background: var(--brand);
+  color: #fff;
+  border-color: var(--brand);
+}
+
+.reject {
+  background: transparent;
+  color: #b42318;
+}
+
+.badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 4px 9px;
+  background: rgba(13, 124, 102, 0.12);
+  color: var(--brand);
+  font-weight: 900;
+}
+
+.badge.blocked,
+.badge.expired,
+.badge.rejected {
+  background: rgba(180, 35, 24, 0.12);
+  color: #b42318;
+}
+
+.badge.pending,
+.badge.trial {
+  background: rgba(181, 117, 0, 0.14);
+  color: #8a5a00;
+}
+
+.user-cell {
+  display: grid;
+  gap: 3px;
+}
+
+.user-email {
+  font-weight: 900;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.82rem;
+  word-break: break-all;
+}
+
+.admin-dialog {
+  width: min(880px, calc(100vw - 28px));
+  border: 0;
+  border-radius: 8px;
+  padding: 0;
+  color: var(--text);
+  background: transparent;
+}
+
+.admin-dialog::backdrop {
+  background: rgba(16, 24, 40, 0.5);
+}
+
+.dialog-card {
+  display: grid;
+  gap: 18px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  padding: 20px;
+  box-shadow: 0 24px 70px rgba(16, 24, 40, 0.24);
+}
+
+.dialog-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.dialog-grid label {
+  display: grid;
+  gap: 8px;
+}
+
+.dialog-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+.password-panel {
+  display: grid;
+  gap: 12px;
+}
+
+hr {
+  width: 100%;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+code {
+  color: var(--brand);
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .admin-header {
+    display: block;
+  }
+
+  .dialog-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-tabs {
+    width: 100%;
+  }
+
+  .tab-button {
+    flex: 1;
+  }
+}
