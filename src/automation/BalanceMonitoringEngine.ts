@@ -3,7 +3,7 @@ import {smsParserService} from '../services/SmsParserService';
 import {useAppStore} from '../store/useAppStore';
 import {loggingService} from '../services/LoggingService';
 import {duplicateGuardService} from '../services/DuplicateGuardService';
-import {ussdAutomationService} from '../services/UssdAutomationService';
+import {automationCoordinator} from '../services/AutomationCoordinator';
 import {transactionRepository} from '../repositories/TransactionRepository';
 import {dashboardService} from '../services/DashboardService';
 import {notificationService} from '../services/NotificationService';
@@ -87,10 +87,16 @@ class BalanceMonitoringEngine {
       await loggingService.log('transaction_completed', 'Transfer triggered');
       await transactionRepository.updateStatus(reference, 'running');
       if (settings.transferMethod === 'DARA_SALAAM_BANK') {
-        result = (await ussdAutomationService.startDaraSalaamBankDeposit(settings, normalizedAmount)).result;
+        result = (await automationCoordinator.executeBankDeposit(settings, normalizedAmount, {
+          source: '898_balance_sms',
+          reference,
+        })).result;
       } else {
-        const ussd = ussdAutomationService.buildBalanceUssd(settings, normalizedAmount);
-        result = await ussdAutomationService.dial(ussd);
+        const ussd = automationCoordinator.buildBalanceTransferUssd(settings, normalizedAmount);
+        result = await automationCoordinator.executeDirectTransfer(ussd, {
+          source: '898_balance_sms',
+          reference,
+        });
       }
       duplicateGuardService.rememberTransferNow();
       await transactionConfirmationService.startAwaitingConfirmation(reference, result);

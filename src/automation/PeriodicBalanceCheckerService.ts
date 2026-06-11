@@ -7,7 +7,7 @@ import {notificationService} from '../services/NotificationService';
 import {subscriptionGuardService} from '../services/SubscriptionGuardService';
 import {useAppStore} from '../store/useAppStore';
 import {truncateToTwoDecimals} from '../utils/ussd';
-import {ussdAutomationService} from '../services/UssdAutomationService';
+import {automationCoordinator} from '../services/AutomationCoordinator';
 import {dashboardService} from '../services/DashboardService';
 import {transactionRepository} from '../repositories/TransactionRepository';
 import {transactionConfirmationService} from '../services/TransactionConfirmationService';
@@ -101,7 +101,9 @@ class PeriodicBalanceCheckerService {
     try {
       const settings = useAppStore.getState().settings;
       await loggingService.log('system', 'Balance Cycle Started');
-      const originalBalance = await ussdAutomationService.runPeriodicBalanceCheck();
+      const originalBalance = await automationCoordinator.executeBalanceInquiry({
+        source: 'periodic_balance_checker',
+      });
       const balanceToTransfer = truncateToTwoDecimals(originalBalance);
       useAppStore.getState().setLastDetectedBalance(balanceToTransfer);
       await loggingService.log('balance_detected', 'Balance Extracted');
@@ -183,15 +185,21 @@ class PeriodicBalanceCheckerService {
 
       let result: UssdFinalResult;
       if (settings.transferMethod === 'DARA_SALAAM_BANK') {
-        result = (await ussdAutomationService.startDaraSalaamBankDeposit(settings, balanceToTransfer)).result;
+        result = (await automationCoordinator.executeBankDeposit(settings, balanceToTransfer, {
+          source: 'periodic_balance_checker',
+          reference,
+        })).result;
         await loggingService.log(
           'system',
           `Bank deposit awaiting 898 confirmation after USSD result ${result.status}`,
         );
       } else {
-        const ussd = ussdAutomationService.buildPeriodicBalanceTransferUssd(settings, balanceToTransfer);
+        const ussd = automationCoordinator.buildPeriodicBalanceTransferUssd(settings, balanceToTransfer);
         await loggingService.log('ussd_dialed', `Generated USSD: ${ussd}`);
-        result = await ussdAutomationService.dial(ussd);
+        result = await automationCoordinator.executeDirectTransfer(ussd, {
+          source: 'periodic_balance_checker',
+          reference,
+        });
         await loggingService.log(
           'system',
           `Transfer awaiting 898 confirmation after USSD result ${result.status}`,

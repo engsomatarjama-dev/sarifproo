@@ -1,7 +1,7 @@
 import {AutomationPreview} from '../types';
 import {smsParserService} from './SmsParserService';
 import {useAppStore} from '../store/useAppStore';
-import {ussdAutomationService} from './UssdAutomationService';
+import {automationCoordinator} from './AutomationCoordinator';
 import {truncateToTwoDecimals, resolveTransferDestination, formatTransferAmountForInput} from '../utils/ussd';
 
 class TestModeService {
@@ -37,7 +37,7 @@ class TestModeService {
           canTransferExchange && settings.transferMethod === 'DARA_SALAAM_BANK'
             ? '*800#'
             : canTransferExchange
-              ? ussdAutomationService.buildExchangeTransferUssd(settings, amountToTransfer)
+              ? automationCoordinator.buildExchangeTransferUssd(settings, amountToTransfer)
               : undefined,
         canAutomate: canTransferExchange,
         reason: canTransferExchange
@@ -65,7 +65,7 @@ class TestModeService {
           canAutomate && settings.transferMethod === 'DARA_SALAAM_BANK'
             ? '*800#'
             : canAutomate
-              ? ussdAutomationService.buildPeriodicBalanceTransferUssd(settings, balanceToTransfer)
+              ? automationCoordinator.buildPeriodicBalanceTransferUssd(settings, balanceToTransfer)
               : undefined,
         canAutomate,
         reason: canAutomate ? undefined : 'Below minimum threshold',

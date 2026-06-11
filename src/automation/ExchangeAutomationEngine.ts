@@ -5,7 +5,7 @@ import {transactionRepository} from '../repositories/TransactionRepository';
 import {loggingService} from '../services/LoggingService';
 import {dashboardService} from '../services/DashboardService';
 import {useAppStore} from '../store/useAppStore';
-import {ussdAutomationService} from '../services/UssdAutomationService';
+import {automationCoordinator} from '../services/AutomationCoordinator';
 import {notificationService} from '../services/NotificationService';
 import {makeDeterministicHash} from '../utils/sms';
 import {redactReference} from '../utils/redaction';
@@ -86,7 +86,10 @@ class ExchangeAutomationEngine {
       if (settings.transferMethod === 'DARA_SALAAM_BANK') {
         await transactionRepository.updateStatus(parsed.reference, 'running');
         await loggingService.log('transaction_completed', 'Transfer triggered');
-        const result = await ussdAutomationService.startDaraSalaamBankDeposit(settings, originalUsdAmount);
+        const result = await automationCoordinator.executeBankDeposit(settings, originalUsdAmount, {
+          source: 'sms',
+          reference: parsed.reference,
+        });
         await transactionConfirmationService.startAwaitingConfirmation(parsed.reference, result.result);
         await loggingService.log(
           'system',
@@ -99,7 +102,7 @@ class ExchangeAutomationEngine {
 
       let ussd: string;
       try {
-        ussd = ussdAutomationService.buildExchangeTransferUssd(settings, parsed.amount);
+        ussd = automationCoordinator.buildExchangeTransferUssd(settings, parsed.amount);
       } catch (error) {
         await transactionRepository.updateStatus(parsed.reference, 'failed');
         await loggingService.log('transaction_failed', `Exchange automation rejected: ${error instanceof Error ? error.message : 'Invalid transfer settings'}`);
@@ -110,7 +113,10 @@ class ExchangeAutomationEngine {
 
       await loggingService.log('transaction_completed', 'Transfer triggered');
       await transactionRepository.updateStatus(parsed.reference, 'running');
-      const result = await ussdAutomationService.dial(ussd);
+      const result = await automationCoordinator.executeDirectTransfer(ussd, {
+        source: 'sms',
+        reference: parsed.reference,
+      });
       await transactionConfirmationService.startAwaitingConfirmation(parsed.reference, result);
       await loggingService.log('system', `Exchange automation awaiting 898 confirmation after USSD result ${result.status} classification ${parsed.classification}`);
       await notificationService.show('Awaiting confirmation', 'Waiting for 898 SMS confirmation.');
