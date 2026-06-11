@@ -1,0 +1,102 @@
+apply plugin: "com.android.application"
+apply plugin: "org.jetbrains.kotlin.android"
+apply plugin: "com.facebook.react"
+
+react {
+    autolinkLibrariesWithApp()
+}
+
+def enableProguardInReleaseBuilds = true
+def jscFlavor = "org.webkit:android-jsc:+"
+
+def configString = { String value ->
+    return "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
+}
+
+def gradlePropertyOrDefault = { String name, String fallback = "" ->
+    return project.findProperty(name)?.toString() ?: System.getenv(name) ?: fallback
+}
+
+def hasReleaseSigning = ["SARIFPRO_RELEASE_STORE_FILE", "SARIFPRO_RELEASE_STORE_PASSWORD", "SARIFPRO_RELEASE_KEY_ALIAS", "SARIFPRO_RELEASE_KEY_PASSWORD"].every {
+    gradlePropertyOrDefault(it)
+}
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    buildToolsVersion rootProject.ext.buildToolsVersion
+    compileSdk rootProject.ext.compileSdkVersion
+    namespace "com.sarifpro"
+
+    defaultConfig {
+        applicationId "com.sarifpro"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 41
+        versionName "1.0.40"
+        resValue "string", "build_config_package", "com.sarifpro"
+        buildConfigField "String", "SUPABASE_URL", configString(gradlePropertyOrDefault("SARIFPRO_SUPABASE_URL"))
+        buildConfigField "String", "SUPABASE_PUBLISHABLE_KEY", configString(gradlePropertyOrDefault("SARIFPRO_SUPABASE_PUBLISHABLE_KEY"))
+        buildConfigField "String", "AUTH_REDIRECT_BASE_URL", configString(gradlePropertyOrDefault("SARIFPRO_AUTH_REDIRECT_BASE_URL"))
+        buildConfigField "boolean", "SUPABASE_USE_ANONYMOUS_AUTH", "false"
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file(System.properties['user.home'] + "/.android/debug.keystore")
+            storePassword "android"
+            keyAlias "androiddebugkey"
+            keyPassword "android"
+        }
+        release {
+            if (hasReleaseSigning) {
+                storeFile file(gradlePropertyOrDefault("SARIFPRO_RELEASE_STORE_FILE"))
+                storePassword gradlePropertyOrDefault("SARIFPRO_RELEASE_STORE_PASSWORD")
+                keyAlias gradlePropertyOrDefault("SARIFPRO_RELEASE_KEY_ALIAS")
+                keyPassword gradlePropertyOrDefault("SARIFPRO_RELEASE_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
+            minifyEnabled enableProguardInReleaseBuilds
+            shrinkResources true
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}
+
+gradle.taskGraph.whenReady { taskGraph ->
+    if (!hasReleaseSigning && taskGraph.allTasks.any { it.path.toLowerCase().contains("release") }) {
+        throw new GradleException("Release signing is required. Set SARIFPRO_RELEASE_STORE_FILE, SARIFPRO_RELEASE_STORE_PASSWORD, SARIFPRO_RELEASE_KEY_ALIAS, and SARIFPRO_RELEASE_KEY_PASSWORD.")
+    }
+}
+
+dependencies {
+    implementation("com.facebook.react:react-android")
+    implementation("androidx.core:core-ktx:1.13.1")
+    implementation("androidx.appcompat:appcompat:1.7.0")
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("com.google.android.material:material:1.12.0")
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscFlavor
+    }
+}

@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="SarifPro subscription admin panel." />
+    <title>SarifPro Admin</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./admin.css" />
+  </head>
+  <body>
+    <main class="admin-shell">
+      <section class="admin-header">
+        <div>
+          <p class="eyebrow">Subscription Admin</p>
+          <h1>SarifPro</h1>
+          <p class="lead">Review renewals, manage device-bound subscriptions, and help customers recover access.</p>
+        </div>
+        <a class="secondary-action" href="./index.html">Download page</a>
+      </section>
+
+      <section class="admin-grid">
+        <article class="admin-card" id="login-card">
+          <h2>Admin Sign In</h2>
+          <form id="login-form" class="admin-form">
+            <label>
+              Email
+              <input id="email" type="email" autocomplete="email" required />
+            </label>
+            <label>
+              Password
+              <input id="password" type="password" autocomplete="current-password" required />
+            </label>
+            <button class="primary-action admin-button" type="submit">Sign In</button>
+          </form>
+          <p class="admin-muted">
+            Your Supabase Auth user must be added to <code>admin_users</code>. Use
+            <code>supabase/admin/add_admin_user.sql</code> once for setup.
+          </p>
+        </article>
+
+        <article class="admin-card hidden" id="panel-card">
+          <div class="admin-card-header">
+            <div>
+              <h2>Admin Console</h2>
+              <p class="admin-muted" id="session-label"></p>
+            </div>
+            <button class="secondary-action admin-button secondary" id="logout-button" type="button">Logout</button>
+          </div>
+
+          <div class="admin-tabs" role="tablist" aria-label="Admin sections">
+            <button class="tab-button active" id="requests-tab" type="button" data-tab="requests">Renewals</button>
+            <button class="tab-button" id="users-tab" type="button" data-tab="users">Users</button>
+          </div>
+
+          <section id="requests-section">
+            <div class="toolbar">
+              <label>
+                Status
+                <select id="status-filter">
+                  <option value="pending">Pending</option>
+                  <option value="verified">Verified</option>
+                  <option value="rejected">Rejected</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+              <button class="primary-action admin-button" id="refresh-button" type="button">Refresh</button>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Device</th>
+                    <th>Requested</th>
+                    <th>Amount</th>
+                    <th>Status</th>
+                    <th>Plan</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody id="requests-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <section class="hidden" id="users-section">
+            <div class="toolbar">
+              <label class="search-field">
+                Search
+                <input id="user-search" type="search" placeholder="Email, name, phone, or device id" />
+              </label>
+              <label>
+                Status
+                <select id="user-status-filter">
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="trial">Trial</option>
+                  <option value="expired">Expired</option>
+                  <option value="blocked">Blocked</option>
+                  <option value="pending">Pending</option>
+                </select>
+              </label>
+              <button class="primary-action admin-button" id="refresh-users-button" type="button">Refresh Users</button>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>User</th>
+                    <th>Device</th>
+                    <th>Account</th>
+                    <th>Subscription</th>
+                    <th>Expiry</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="users-body"></tbody>
+              </table>
+            </div>
+          </section>
+
+          <dialog id="user-dialog" class="admin-dialog">
+            <form method="dialog" class="dialog-card">
+              <div class="admin-card-header">
+                <div>
+                  <h2 id="dialog-title">Manage User</h2>
+                  <p class="admin-muted" id="dialog-subtitle"></p>
+                </div>
+                <button class="small-action" id="close-dialog-button" value="cancel" type="submit">Close</button>
+              </div>
+
+              <div class="dialog-grid">
+                <label>
+                  Full name
+                  <input id="edit-full-name" type="text" />
+                </label>
+                <label>
+                  Phone
+                  <input id="edit-phone" type="text" />
+                </label>
+                <label>
+                  Client status
+                  <select id="edit-client-status">
+                    <option value="active">Active</option>
+                    <option value="pending">Pending</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
+                </label>
+                <label>
+                  Device active
+                  <select id="edit-device-active">
+                    <option value="true">Active</option>
+                    <option value="false">Disabled</option>
+                  </select>
+                </label>
+                <label>
+                  Plan
+                  <select id="grant-plan">
+                    <option value="monthly">Monthly</option>
+                    <option value="quarterly">Quarterly</option>
+                    <option value="yearly">Yearly</option>
+                    <option value="trial">3-day trial</option>
+                  </select>
+                </label>
+                <label>
+                  Subscription status
+                  <select id="edit-subscription-status">
+                    <option value="active">Active</option>
+                    <option value="trial">Trial</option>
+                    <option value="pending">Pending</option>
+                    <option value="expired">Expired</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
+                </label>
+              </div>
+
+              <div class="dialog-actions">
+                <button class="primary-action admin-button" id="save-user-button" type="button">Save Profile</button>
+                <button class="small-action approve" id="grant-subscription-button" type="button">Grant/Renew Plan</button>
+                <button class="small-action" id="set-subscription-status-button" type="button">Set Sub Status</button>
+              </div>
+
+              <hr />
+
+              <div class="password-panel">
+                <div>
+                  <h3>Password Recovery</h3>
+                  <p class="admin-muted">Send a reset email, or set a temporary password and give it to the customer securely.</p>
+                </div>
+                <div class="dialog-actions">
+                  <button class="small-action" id="send-reset-button" type="button">Send Reset Email</button>
+                  <button class="small-action reject" id="temporary-password-button" type="button">Set Temporary Password</button>
+                </div>
+                <output class="admin-muted" id="password-result"></output>
+              </div>
+            </form>
+          </dialog>
+        </article>
+      </section>
+
+      <p class="admin-status" id="status-message"></p>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./admin.js"></script>
+  </body>
+</html>

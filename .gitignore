@@ -1,0 +1,40 @@
+node_modules/
+.gradle/
+android/.gradle/
+android/app/build/
+android/build/
+*.log
+coverage/
+.idea/
+.vscode/
+local.properties
+android/gradle.properties
+yarn.lock
+pnpm-lock.yaml
+.env
+.env.*
+!.env.example
+*.keystore
+*.jks
+android/key.properties
+
+# Local Netlify folder
+.netlify
+
+# Generated/download artifacts are tracked only through releases/
+download-site/*.apk
+github-pages-sarifproo/
+old_apk_versions/
+*.zip
+
+# Local screenshots/debug captures
+*.png
+*.xml
+apk-manifest.bin
+
+# Other local projects in this workspace
+bajaaj_shift_system/
+city_sanitation/
+
+!releases/
+!releases/*.apk
