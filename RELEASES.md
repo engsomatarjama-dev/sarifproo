@@ -24,3 +24,13 @@ This file tracks SarifPro APK releases and stability status.
 | --- | --- |
 | `unstable-current` | Current source code checkpoint created after later unstable development work. |
 
+## V2 Development
+
+SarifPro V2 development starts from the `sarifpro-v2` branch.
+
+V2 rules:
+
+- Use the stable `v1.0.28` user experience as the baseline.
+- Do not redesign UI.
+- Rebuild automation reliability through `AutomationCoordinator`.
+- No APK should be distributed from V2 until the phase checklist in `SARIFPRO_V2_STRATEGY.md` is satisfied.
