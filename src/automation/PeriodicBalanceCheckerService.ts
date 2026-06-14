@@ -94,13 +94,13 @@ class PeriodicBalanceCheckerService {
 
     this.running = true;
     const startedAt = Date.now();
-    duplicateGuardService.rememberBalanceCheckNow();
     let failedCycle = false;
     let pendingConfirmationReference: string | undefined;
     let pendingConfirmationType: 'direct_transfer' | 'bank_deposit' = 'direct_transfer';
     try {
       const settings = useAppStore.getState().settings;
       await loggingService.log('system', 'Balance Cycle Started');
+      await loggingService.log('system', `next_balance_check_started_at=${startedAt}`);
       const originalBalance = await automationCoordinator.executeBalanceInquiry({
         source: 'periodic_balance_checker',
       });
@@ -227,13 +227,14 @@ class PeriodicBalanceCheckerService {
       await loggingService.log('transaction_failed', `Balance check failed: ${error instanceof Error ? error.message : String(error)}`);
       await notificationService.show('Transfer failed', 'Periodic balance check failed.');
     } finally {
+      duplicateGuardService.rememberBalanceCheckNow();
       this.running = false;
       await loggingService.log('system', 'Automation Returned To Idle');
-      this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
+      await this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
     }
   }
 
-  private scheduleContinuousCycle(delayMs: number) {
+  private async scheduleContinuousCycle(delayMs: number) {
     const settings = useAppStore.getState().settings;
     if (
       !settings.automationEnabled ||
@@ -246,6 +247,7 @@ class PeriodicBalanceCheckerService {
     if (this.continuousTimer) {
       clearTimeout(this.continuousTimer);
     }
+    await loggingService.log('system', `next_balance_check_scheduled_at=${Date.now() + delayMs}`);
     this.continuousTimer = setTimeout(() => {
       this.continuousTimer = undefined;
       void this.tick();

@@ -37,6 +37,7 @@ class UssdAutomationService {
         ussdSessionLockService.markWaitingScreenVisible();
       }, 2);
       await loggingService.log('system', 'Periodic balance check started');
+      await loggingService.log('system', `balance_check_started_at=${Date.now()}`);
       return this.monitorBalanceCheckFlow();
     });
   }
@@ -62,10 +63,12 @@ class UssdAutomationService {
           throw new Error('Balance check result was invalid.');
         }
         await loggingService.log('balance_detected', 'Balance result detected');
+        await loggingService.log('system', `balance_result_detected_at=${Date.now()}`);
         await loggingService.log('balance_detected', 'Balance extracted');
         await loggingService.log('balance_detected', 'Balance detected by periodic checker');
         if (resultMessage) {
           await loggingService.log('system', 'Balance result dismissed');
+          await loggingService.log('system', `balance_ok_clicked_at=${Date.now()}`);
         }
         ussdSessionLockService.markResponseReceived('completed');
         return balance;

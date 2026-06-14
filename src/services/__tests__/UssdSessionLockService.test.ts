@@ -78,4 +78,28 @@ describe('UssdSessionLockService', () => {
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Network settling used because session unsafe');
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Delayed response received during settling');
   });
+
+  it('does not enter network settling when a clean balance result popup disappears after a short delay', async () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'BALANCE_CHECK-1',
+      startedAt: Date.now(),
+      currentFlow: 'BALANCE_CHECK',
+      state: 'SUCCESS',
+    };
+    mockedAccessibility.isUssdWindowVisible
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    mockedAccessibility.dismissVisibleUssdWindow.mockResolvedValue(true);
+
+    await service.release('BALANCE_CHECK-1');
+
+    expect(service.getActiveSession()).toEqual({isActive: false, state: 'IDLE'});
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD popup dismissed');
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Post-result 10s wait skipped');
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Session lock released immediately');
+    expect(mockedLogging.log).not.toHaveBeenCalledWith('system', 'Entering NETWORK_SETTLING');
+  });
 });
