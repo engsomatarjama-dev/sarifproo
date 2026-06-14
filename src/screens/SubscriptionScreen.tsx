@@ -79,7 +79,7 @@ export const SubscriptionScreen = () => {
       </Card>
 
       <PrimaryButton label="Renew Subscription" onPress={() => navigation.navigate('RenewSubscription')} />
-      <PrimaryButton label="Revalidate Now" onPress={() => void subscriptionGuardService.validateSubscription().then(refresh)} tone="neutral" />
+      <PrimaryButton label="Revalidate Now" onPress={() => void subscriptionGuardService.validateSubscription('manual').then(refresh)} tone="neutral" />
     </Screen>
   );
 };

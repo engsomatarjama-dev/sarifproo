@@ -49,7 +49,7 @@ class AppStartupService {
     await accessibilityAutomationService.syncAutomationSettings(settings);
     await accessibilityAutomationService.refreshStatus();
     try {
-      await subscriptionGuardService.validateSubscription();
+      await subscriptionGuardService.validateSubscription('startup');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown subscription validation error';
       await loggingService.log('system', `Subscription validation failed during startup: ${message}`);

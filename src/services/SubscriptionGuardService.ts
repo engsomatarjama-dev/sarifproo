@@ -21,6 +21,14 @@ type AutomationDecisionCache = {
   status?: Subscription['status'];
 };
 
+type SubscriptionValidationContext = 'startup' | 'manual' | 'automation' | 'periodic' | 'general';
+
+type SubscriptionValidationResult = {
+  allowed: boolean;
+  subscription?: Subscription;
+  reason?: string;
+};
+
 const isOfflineValidationReason = (reason?: string) => {
   const normalized = reason?.toLowerCase() ?? '';
   return (
@@ -52,6 +60,9 @@ class SubscriptionGuardService {
   private automationDecisionCache?: AutomationDecisionCache;
   private lastLoggedSubscriptionStatus?: Subscription['status'];
   private lastLoggedSubscriptionAt = 0;
+  private validationInFlight?: Promise<SubscriptionValidationResult>;
+  private lastLoggedIntegrityFailureKey?: string;
+  private startupValidationLogged = false;
 
   private readIntegrity() {
     const integrityRaw = appStorage.getString(INTEGRITY_KEY);
@@ -138,7 +149,38 @@ class SubscriptionGuardService {
     appStorage.delete(INTEGRITY_KEY);
   }
 
-  async validateSubscription() {
+  async validateSubscription(context: SubscriptionValidationContext = 'general'): Promise<SubscriptionValidationResult> {
+    if (this.validationInFlight) {
+      return this.validationInFlight;
+    }
+
+    const isStartup = context === 'startup' && !this.startupValidationLogged;
+    if (isStartup) {
+      this.startupValidationLogged = true;
+    }
+
+    this.validationInFlight = (async () => {
+      if (isStartup) {
+        await loggingService.log('subscription_checked', 'Subscription startup validation started');
+      }
+      const result = await this.runSubscriptionValidation();
+      if (isStartup) {
+        await loggingService.log(
+          result.allowed ? 'subscription_checked' : 'subscription_expired',
+          result.allowed ? 'Subscription startup validation completed' : `Subscription startup validation failed: ${result.reason ?? 'not allowed'}`,
+        );
+      }
+      return result;
+    })()
+      .then(result => result)
+      .finally(() => {
+        this.validationInFlight = undefined;
+      });
+
+    return this.validationInFlight;
+  }
+
+  private async runSubscriptionValidation(): Promise<SubscriptionValidationResult> {
     let latest = await subscriptionRepository.getLatest();
     const deviceId = await securityService.getDeviceId();
     const salt = await securityService.getIntegritySalt();
@@ -258,7 +300,7 @@ class SubscriptionGuardService {
       );
 
       if (recalculatedHash !== integrity.payloadHash) {
-        await loggingService.log('subscription_expired', 'Subscription integrity check failed');
+        await this.logIntegrityFailureOnce(deviceId, latest, cache);
         this.lastVerificationStatus = 'verification_required';
         return {
           allowed: false,
@@ -328,6 +370,23 @@ class SubscriptionGuardService {
     };
   }
 
+  private async logIntegrityFailureOnce(deviceId: string, subscription: Subscription, cache?: SubscriptionCacheRecord) {
+    const key = [
+      deviceId,
+      subscription.status,
+      subscription.expiryDate,
+      cache?.status,
+      cache?.expiryDate,
+      cache?.lastVerifiedAt,
+      cache?.deviceValid,
+    ].join('|');
+    if (this.lastLoggedIntegrityFailureKey === key) {
+      return;
+    }
+    this.lastLoggedIntegrityFailureKey = key;
+    await loggingService.log('subscription_expired', 'Subscription integrity check failed');
+  }
+
   private getTrustedCachedAutomationDecision() {
     const cached = this.automationDecisionCache;
     if (!cached || !cached.allowed || cached.status === 'expired' || cached.status === 'blocked' || cached.status === 'pending') {
@@ -366,7 +425,7 @@ class SubscriptionGuardService {
     if (cachedAllowed !== undefined) {
       return cachedAllowed;
     }
-    const result = await this.validateSubscription();
+    const result = await this.validateSubscription('automation');
     this.cacheAutomationDecision(result);
     if (!result.allowed) {
       await loggingService.log('subscription_expired', result.reason ?? 'Automation blocked by subscription guard');
@@ -379,7 +438,7 @@ class SubscriptionGuardService {
       return;
     }
     this.interval = setInterval(() => {
-      void this.validateSubscription();
+      void this.validateSubscription('periodic');
     }, 15 * 60 * 1000);
   }
 

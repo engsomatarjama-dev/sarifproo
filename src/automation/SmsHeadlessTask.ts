@@ -20,7 +20,7 @@ export const sarifSmsHeadlessTask = async (payload: Partial<SmsPayload>) => {
     const settings = await settingsService.load();
     useAppStore.getState().setSettings(settings);
     await accessibilityAutomationService.syncAutomationSettings(settings);
-    await subscriptionGuardService.validateSubscription();
+    await subscriptionGuardService.validateSubscription('startup');
     await automationService.processSms(payload);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown headless SMS processing error';
