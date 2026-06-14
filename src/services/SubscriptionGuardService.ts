@@ -12,6 +12,7 @@ import {evaluateOfflineGrace, getOfflineGraceRemainingMs} from './SubscriptionGr
 
 const INTEGRITY_KEY = 'subscription.integrity';
 const AUTOMATION_VALIDATION_CACHE_MS = 15 * 60 * 1000;
+const SUBSCRIPTION_STATUS_LOG_INTERVAL_MS = 15 * 60 * 1000;
 
 type AutomationDecisionCache = {
   allowed: boolean;
@@ -49,6 +50,8 @@ class SubscriptionGuardService {
   private interval?: ReturnType<typeof setInterval>;
   private lastVerificationStatus: 'online' | 'offline_grace' | 'verification_required' = 'verification_required';
   private automationDecisionCache?: AutomationDecisionCache;
+  private lastLoggedSubscriptionStatus?: Subscription['status'];
+  private lastLoggedSubscriptionAt = 0;
 
   private readIntegrity() {
     const integrityRaw = appStorage.getString(INTEGRITY_KEY);
@@ -99,6 +102,7 @@ class SubscriptionGuardService {
     deviceValid: boolean;
     lastVerifiedAt?: number;
   }) {
+    const previousCache = await subscriptionCacheRepository.get();
     const cache: SubscriptionCacheRecord = {
       userId: options.userId,
       status: subscription.status,
@@ -109,7 +113,14 @@ class SubscriptionGuardService {
       validationSource: 'online',
     };
     await subscriptionCacheRepository.save(cache);
-    await loggingService.log('subscription_checked', 'Subscription cache updated');
+    if (
+      !previousCache ||
+      previousCache.status !== cache.status ||
+      previousCache.expiryDate !== cache.expiryDate ||
+      previousCache.deviceValid !== cache.deviceValid
+    ) {
+      await loggingService.log('subscription_checked', 'Subscription cache updated');
+    }
     return cache;
   }
 
@@ -158,7 +169,13 @@ class SubscriptionGuardService {
       await this.persistIntegrity(synchronized, cache);
       latest = synchronized;
       this.lastVerificationStatus = 'online';
-      await loggingService.log('subscription_checked', `Online subscription verification success: ${synchronized.status}`);
+      this.cacheAutomationDecision({
+        allowed: synchronized.status === 'active' || synchronized.status === 'trial',
+        subscription: synchronized,
+      });
+      if (this.shouldLogSubscriptionStatus(synchronized.status)) {
+        await loggingService.log('subscription_checked', `Online subscription verification success: ${synchronized.status}`);
+      }
     } else {
       await loggingService.log('system', `Online subscription verification failed: ${remoteValidation.reason}`);
       if (remoteValidation.reason === 'Login is required') {
@@ -297,7 +314,13 @@ class SubscriptionGuardService {
     if (!remoteValidated && integrity) {
       this.persistLastKnownNow(integrity);
     }
-    await loggingService.log('subscription_checked', remoteValidated ? `Subscription revalidated: ${resolved.status}` : `Subscription checked: ${resolved.status}`);
+    this.cacheAutomationDecision({
+      allowed: resolved.status === 'active' || resolved.status === 'trial',
+      subscription: resolved,
+    });
+    if (!remoteValidated && this.shouldLogSubscriptionStatus(resolved.status)) {
+      await loggingService.log('subscription_checked', `Subscription checked: ${resolved.status}`);
+    }
     return {
       allowed: resolved.status === 'active' || resolved.status === 'trial',
       subscription: resolved,
@@ -319,18 +342,32 @@ class SubscriptionGuardService {
     return cached.allowed;
   }
 
-  async canRunAutomation() {
-    const cachedAllowed = this.getTrustedCachedAutomationDecision();
-    if (cachedAllowed !== undefined) {
-      return cachedAllowed;
-    }
-    const result = await this.validateSubscription();
+  private cacheAutomationDecision(result: {allowed: boolean; subscription?: Subscription}) {
     this.automationDecisionCache = {
       allowed: result.allowed,
       expiryDate: result.subscription?.expiryDate,
       checkedAt: Date.now(),
       status: result.subscription?.status,
     };
+  }
+
+  private shouldLogSubscriptionStatus(status: Subscription['status']) {
+    const now = Date.now();
+    if (this.lastLoggedSubscriptionStatus !== status || now - this.lastLoggedSubscriptionAt > SUBSCRIPTION_STATUS_LOG_INTERVAL_MS) {
+      this.lastLoggedSubscriptionStatus = status;
+      this.lastLoggedSubscriptionAt = now;
+      return true;
+    }
+    return false;
+  }
+
+  async canRunAutomation() {
+    const cachedAllowed = this.getTrustedCachedAutomationDecision();
+    if (cachedAllowed !== undefined) {
+      return cachedAllowed;
+    }
+    const result = await this.validateSubscription();
+    this.cacheAutomationDecision(result);
     if (!result.allowed) {
       await loggingService.log('subscription_expired', result.reason ?? 'Automation blocked by subscription guard');
     }
@@ -347,14 +384,26 @@ class SubscriptionGuardService {
   }
 
   async getDashboardSummary() {
-    const current = await this.validateSubscription();
+    let subscription = useAppStore.getState().subscription ?? await subscriptionRepository.getLatest();
     const cache = await subscriptionCacheRepository.get();
+    if (!subscription && cache) {
+      subscription = {
+        planType: cache.status === 'trial' ? 'trial' : 'monthly',
+        startDate: new Date(cache.lastVerifiedAt).toISOString(),
+        expiryDate: cache.expiryDate,
+        status: cache.status,
+        paymentReference: '',
+        createdAt: new Date(cache.lastVerifiedAt).toISOString(),
+      };
+    }
+    const expired = subscription?.expiryDate ? dayjs().isAfter(dayjs(subscription.expiryDate)) : true;
+    const status = expired ? 'expired' : subscription?.status;
     const offlineGraceRemainingMs =
       this.lastVerificationStatus === 'offline_grace' && cache ? getOfflineGraceRemainingMs(cache) : undefined;
     return {
-      subscriptionStatus: current.subscription?.status ?? 'expired',
-      expiryDate: current.subscription?.expiryDate,
-      daysRemaining: daysUntil(current.subscription?.expiryDate),
+      subscriptionStatus: status ?? 'expired',
+      expiryDate: subscription?.expiryDate,
+      daysRemaining: daysUntil(subscription?.expiryDate),
       subscriptionVerificationStatus: this.lastVerificationStatus,
       lastSubscriptionVerifiedAt: cache?.lastVerifiedAt,
       offlineGraceRemainingMs,
