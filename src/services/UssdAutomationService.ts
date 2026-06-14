@@ -5,6 +5,7 @@ import {buildAccountTransferUssd, buildPeriodicBalanceTransferUssd, formatTransf
 import {redactLogMessage, redactUssd} from '../utils/redaction';
 import {useAppStore} from '../store/useAppStore';
 import {loggingService} from './LoggingService';
+import {timingLogService} from './TimingLogService';
 import {UssdFlow, ussdSessionLockService} from './UssdSessionLockService';
 
 const DARA_SALAAM_USSD = '*800#';
@@ -36,8 +37,8 @@ class UssdAutomationService {
         await ussdNative.dialUssd(DARA_SALAAM_USSD);
         ussdSessionLockService.markWaitingScreenVisible();
       }, 2);
-      await loggingService.log('system', 'Periodic balance check started');
-      await loggingService.log('system', `balance_check_started_at=${Date.now()}`);
+      void loggingService.log('system', 'Periodic balance check started');
+      timingLogService.log('system', `balance_check_started_at=${Date.now()}`);
       return this.monitorBalanceCheckFlow();
     });
   }
@@ -50,9 +51,7 @@ class UssdAutomationService {
       if (state && !seenStates.has(state)) {
         seenStates.add(state);
         if (state === 'BALANCE_MAIN_MENU') {
-          await loggingService.log('pin_entered', 'Periodic balance checker PIN entered');
-          await loggingService.log('system', 'Balance check step advanced');
-          await loggingService.log('system', 'Balance check delay skipped because screen detected');
+          void loggingService.log('pin_entered', 'Periodic balance checker PIN entered');
         }
       }
       if (state === 'BALANCE_COMPLETE') {
@@ -62,15 +61,12 @@ class UssdAutomationService {
         if (!Number.isFinite(balance)) {
           throw new Error('Balance check result was invalid.');
         }
-        await loggingService.log('balance_detected', 'Balance result detected');
-        await loggingService.log('system', `balance_result_detected_at=${Date.now()}`);
-        await loggingService.log('balance_detected', 'Balance extracted');
-        await loggingService.log('balance_detected', 'Balance detected by periodic checker');
-        if (resultMessage) {
-          await loggingService.log('system', 'Balance result dismissed');
-          await loggingService.log('system', `balance_ok_clicked_at=${Date.now()}`);
-        }
         ussdSessionLockService.markResponseReceived('completed');
+        void loggingService.log('balance_detected', 'Balance result detected');
+        timingLogService.log('system', `balance_result_detected_at=${Date.now()}`);
+        if (resultMessage) {
+          timingLogService.log('system', `balance_ok_clicked_at=${Date.now()}`);
+        }
         return balance;
       }
       if (state === 'BALANCE_FAILED') {

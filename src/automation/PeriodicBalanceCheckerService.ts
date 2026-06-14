@@ -14,6 +14,7 @@ import {transactionConfirmationService} from '../services/TransactionConfirmatio
 import {automationQueueService} from '../services/AutomationQueueService';
 import {buildTransferDedupeKey} from '../services/DuplicateTransferPolicy';
 import {ussdSessionLockService} from '../services/UssdSessionLockService';
+import {timingLogService} from '../services/TimingLogService';
 
 class PeriodicBalanceCheckerService {
   private running = false;
@@ -99,17 +100,17 @@ class PeriodicBalanceCheckerService {
     let pendingConfirmationType: 'direct_transfer' | 'bank_deposit' = 'direct_transfer';
     try {
       const settings = useAppStore.getState().settings;
-      await loggingService.log('system', 'Balance Cycle Started');
-      await loggingService.log('system', `next_balance_check_started_at=${startedAt}`);
+      void loggingService.log('system', 'Balance Cycle Started');
+      timingLogService.log('system', `next_balance_check_started_at=${startedAt}`);
       const originalBalance = await automationCoordinator.executeBalanceInquiry({
         source: 'periodic_balance_checker',
       });
       const balanceToTransfer = truncateToTwoDecimals(originalBalance);
       useAppStore.getState().setLastDetectedBalance(balanceToTransfer);
-      await loggingService.log('balance_detected', 'Balance Extracted');
+      void loggingService.log('balance_detected', 'Balance Extracted');
 
       if (originalBalance !== balanceToTransfer) {
-        await loggingService.log(
+        void loggingService.log(
           'system',
           `Original Balance: ${originalBalance}. Transfer Balance: ${balanceToTransfer}. Extra decimal digits discarded`,
         );
@@ -117,27 +118,27 @@ class PeriodicBalanceCheckerService {
 
       if (balanceToTransfer <= 0) {
         await this.saveCheck(originalBalance, balanceToTransfer, 'completed', startedAt);
-        await loggingService.log('system', 'No transferable balance available');
-        await dashboardService.refresh();
-        await loggingService.log('system', 'Balance Cycle Completed');
+        void loggingService.log('system', 'No transferable balance available');
+        this.refreshDashboardAsync();
+        void loggingService.log('system', 'Balance Cycle Completed');
         return;
       }
 
       if (balanceToTransfer < settings.minimumBalanceThreshold) {
         await this.saveCheck(originalBalance, balanceToTransfer, 'completed', startedAt);
-        await loggingService.log('balance_detected', 'Balance below threshold');
-        await loggingService.log('system', 'Balance check completed without 898 confirmation wait');
-        await dashboardService.refresh();
-        await loggingService.log('system', 'Balance Cycle Completed');
+        void loggingService.log('balance_detected', 'Balance below threshold');
+        void loggingService.log('system', 'Balance check completed without 898 confirmation wait');
+        this.refreshDashboardAsync();
+        void loggingService.log('system', 'Balance Cycle Completed');
         return;
       }
 
       if (!duplicateGuardService.canTransferPeriodicBalance(balanceToTransfer)) {
         await this.saveCheck(originalBalance, balanceToTransfer, 'completed', startedAt);
-        await loggingService.log('system', 'Periodic balance transfer skipped due to duplicate cooldown');
-        await loggingService.log('system', 'Balance check completed without 898 confirmation wait');
-        await dashboardService.refresh();
-        await loggingService.log('system', 'Balance Cycle Completed');
+        void loggingService.log('system', 'Periodic balance transfer skipped due to duplicate cooldown');
+        void loggingService.log('system', 'Balance check completed without 898 confirmation wait');
+        this.refreshDashboardAsync();
+        void loggingService.log('system', 'Balance Cycle Completed');
         return;
       }
 
@@ -153,10 +154,10 @@ class PeriodicBalanceCheckerService {
       });
       if (duplicateTransfer) {
         await this.saveCheck(originalBalance, balanceToTransfer, 'completed', startedAt);
-        await loggingService.log('system', 'Duplicate event detected');
-        await loggingService.log('system', 'Periodic balance transfer skipped because matching transfer already processed');
-        await dashboardService.refresh();
-        await loggingService.log('system', 'Balance Cycle Completed');
+        void loggingService.log('system', 'Duplicate event detected');
+        void loggingService.log('system', 'Periodic balance transfer skipped because matching transfer already processed');
+        this.refreshDashboardAsync();
+        void loggingService.log('system', 'Balance Cycle Completed');
         return;
       }
 
@@ -208,10 +209,10 @@ class PeriodicBalanceCheckerService {
 
       await transactionConfirmationService.startAwaitingConfirmation(reference, result);
       duplicateGuardService.rememberPeriodicBalanceTransfer(balanceToTransfer);
-      await loggingService.log('system', 'Periodic balance transfer awaiting confirmation');
-      await notificationService.show('Awaiting confirmation', 'Waiting for 898 SMS confirmation.');
-      await dashboardService.refresh();
-      await loggingService.log('system', 'Balance Cycle Completed');
+      void loggingService.log('system', 'Periodic balance transfer awaiting confirmation');
+      void notificationService.show('Awaiting confirmation', 'Waiting for 898 SMS confirmation.');
+      this.refreshDashboardAsync();
+      void loggingService.log('system', 'Balance Cycle Completed');
     } catch (error) {
       failedCycle = true;
       if (pendingConfirmationReference) {
@@ -224,17 +225,17 @@ class PeriodicBalanceCheckerService {
         });
       }
       await this.saveCheck(0, 0, 'failed', startedAt);
-      await loggingService.log('transaction_failed', `Balance check failed: ${error instanceof Error ? error.message : String(error)}`);
-      await notificationService.show('Transfer failed', 'Periodic balance check failed.');
+      void loggingService.log('transaction_failed', `Balance check failed: ${error instanceof Error ? error.message : String(error)}`);
+      void notificationService.show('Transfer failed', 'Periodic balance check failed.');
     } finally {
       duplicateGuardService.rememberBalanceCheckNow();
       this.running = false;
-      await loggingService.log('system', 'Automation Returned To Idle');
-      await this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
+      void loggingService.log('system', 'Automation Returned To Idle');
+      this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
     }
   }
 
-  private async scheduleContinuousCycle(delayMs: number) {
+  private scheduleContinuousCycle(delayMs: number) {
     const settings = useAppStore.getState().settings;
     if (
       !settings.automationEnabled ||
@@ -247,11 +248,17 @@ class PeriodicBalanceCheckerService {
     if (this.continuousTimer) {
       clearTimeout(this.continuousTimer);
     }
-    await loggingService.log('system', `next_balance_check_scheduled_at=${Date.now() + delayMs}`);
+    timingLogService.log('system', `next_balance_check_scheduled_at=${Date.now() + delayMs}`);
     this.continuousTimer = setTimeout(() => {
       this.continuousTimer = undefined;
       void this.tick();
     }, delayMs);
+  }
+
+  private refreshDashboardAsync() {
+    void dashboardService.refresh().catch(error => {
+      void loggingService.log('system', `Dashboard refresh failed after balance check: ${error instanceof Error ? error.message : String(error)}`);
+    });
   }
 
   private async saveCheck(balance: number, transferAmount: number, status: BalanceCheck['status'], timestamp: number) {

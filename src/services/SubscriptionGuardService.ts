@@ -11,6 +11,14 @@ import {subscriptionCacheRepository} from '../repositories/SubscriptionCacheRepo
 import {evaluateOfflineGrace, getOfflineGraceRemainingMs} from './SubscriptionGracePolicy';
 
 const INTEGRITY_KEY = 'subscription.integrity';
+const AUTOMATION_VALIDATION_CACHE_MS = 15 * 60 * 1000;
+
+type AutomationDecisionCache = {
+  allowed: boolean;
+  expiryDate?: string;
+  checkedAt: number;
+  status?: Subscription['status'];
+};
 
 const isOfflineValidationReason = (reason?: string) => {
   const normalized = reason?.toLowerCase() ?? '';
@@ -40,6 +48,7 @@ const isOfflineValidationReason = (reason?: string) => {
 class SubscriptionGuardService {
   private interval?: ReturnType<typeof setInterval>;
   private lastVerificationStatus: 'online' | 'offline_grace' | 'verification_required' = 'verification_required';
+  private automationDecisionCache?: AutomationDecisionCache;
 
   private readIntegrity() {
     const integrityRaw = appStorage.getString(INTEGRITY_KEY);
@@ -296,8 +305,32 @@ class SubscriptionGuardService {
     };
   }
 
+  private getTrustedCachedAutomationDecision() {
+    const cached = this.automationDecisionCache;
+    if (!cached || !cached.allowed || cached.status === 'expired' || cached.status === 'blocked' || cached.status === 'pending') {
+      return undefined;
+    }
+    if (Date.now() - cached.checkedAt > AUTOMATION_VALIDATION_CACHE_MS) {
+      return undefined;
+    }
+    if (cached.expiryDate && dayjs().isAfter(dayjs(cached.expiryDate))) {
+      return undefined;
+    }
+    return cached.allowed;
+  }
+
   async canRunAutomation() {
+    const cachedAllowed = this.getTrustedCachedAutomationDecision();
+    if (cachedAllowed !== undefined) {
+      return cachedAllowed;
+    }
     const result = await this.validateSubscription();
+    this.automationDecisionCache = {
+      allowed: result.allowed,
+      expiryDate: result.subscription?.expiryDate,
+      checkedAt: Date.now(),
+      status: result.subscription?.status,
+    };
     if (!result.allowed) {
       await loggingService.log('subscription_expired', result.reason ?? 'Automation blocked by subscription guard');
     }

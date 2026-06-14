@@ -1,6 +1,7 @@
 import {accessibilityNative} from '../native/SarifNative';
 import {delay} from '../utils/retry';
 import {loggingService} from './LoggingService';
+import {timingLogService} from './TimingLogService';
 
 export type UssdFlow = 'BALANCE_CHECK' | 'DIRECT_TRANSFER' | 'BANK_DEPOSIT';
 export type UssdSessionState =
@@ -124,8 +125,8 @@ export class UssdSessionLockService {
     }
     if (!this.hasTerminalState()) {
       await loggingService.log('system', 'Network settling used because session unsafe');
-      await loggingService.log('system', `network_settling_entered_at=${Date.now()}`);
-      await loggingService.log('system', 'network_settling_reason=non_terminal_session_state');
+      timingLogService.log('system', `network_settling_entered_at=${Date.now()}`);
+      timingLogService.log('system', 'network_settling_reason=non_terminal_session_state');
       await this.networkSettle(sessionId, options);
     }
 
@@ -143,8 +144,8 @@ export class UssdSessionLockService {
 
       await loggingService.log('system', 'USSD window still visible after OK');
       await loggingService.log('system', 'Network settling used because session unsafe');
-      await loggingService.log('system', `network_settling_entered_at=${Date.now()}`);
-      await loggingService.log('system', 'network_settling_reason=terminal_popup_still_visible_after_ok');
+      timingLogService.log('system', `network_settling_entered_at=${Date.now()}`);
+      timingLogService.log('system', 'network_settling_reason=terminal_popup_still_visible_after_ok');
       await this.networkSettle(sessionId, options);
     }
 
@@ -264,7 +265,7 @@ export class UssdSessionLockService {
 
       if (!visible) {
         await loggingService.log('system', 'USSD popup dismissed');
-        await loggingService.log('system', `ussd_popup_disappeared_at=${Date.now()}`);
+        timingLogService.log('system', `ussd_popup_disappeared_at=${Date.now()}`);
         return true;
       }
 
@@ -302,7 +303,7 @@ export class UssdSessionLockService {
     if (safeForImmediateDial) {
       await loggingService.log('system', 'Session lock released immediately');
     }
-    await loggingService.log('system', `session_lock_released_at=${Date.now()}`);
+    timingLogService.log('system', `session_lock_released_at=${Date.now()}`);
     await loggingService.log('system', 'USSD session released');
     this.releaseCallback?.();
   }
