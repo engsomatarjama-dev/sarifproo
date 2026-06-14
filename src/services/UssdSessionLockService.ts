@@ -26,10 +26,18 @@ const STALE_SESSION_MS = 3 * 60 * 1000;
 const NETWORK_SETTLING_MS = 30_000;
 const CLEAN_IDLE_MS = 10_000;
 const CLEAN_IDLE_TIMEOUT_MS = 60_000;
+const CLEAN_RELEASE_CONFIRM_TIMEOUT_MS = 2_000;
+const CLEAN_RELEASE_CONFIRM_STEP_MS = 250;
 const WAIT_STEP_MS = 300;
 
-class UssdSessionLockService {
+export class UssdSessionLockService {
   private session: ActiveUssdSession = {isActive: false, state: 'IDLE'};
+  private lastReleaseSafeForImmediateDial = false;
+  private releaseCallback?: () => void;
+
+  setReleaseCallback(callback: () => void) {
+    this.releaseCallback = callback;
+  }
 
   getActiveSession() {
     return {...this.session};
@@ -65,7 +73,9 @@ class UssdSessionLockService {
       await delay(WAIT_STEP_MS);
     }
 
-    const clean = await this.waitForCleanDialerState();
+    const clean = this.lastReleaseSafeForImmediateDial
+      ? await this.confirmCleanForImmediateDial()
+      : await this.waitForCleanDialerState();
     if (!clean) {
       await loggingService.log('system', 'USSD lock prevented duplicate session');
       return undefined;
@@ -112,14 +122,32 @@ class UssdSessionLockService {
       return;
     }
     if (!this.hasTerminalState()) {
+      await loggingService.log('system', 'Network settling used because session unsafe');
       await this.networkSettle(sessionId, options);
     }
-    await this.waitForCleanDialerState();
+
+    if (this.canReleaseImmediatelyAfterCleanResult()) {
+      const dismissed = await this.confirmPopupDismissedAfterResult(sessionId);
+      if (dismissed) {
+        if (sessionId && this.session.sessionId !== sessionId) {
+          return;
+        }
+        await loggingService.log('system', 'Clean session ended');
+        await loggingService.log('system', 'Post-result 10s wait skipped');
+        await this.releaseSession(true);
+        return;
+      }
+
+      await loggingService.log('system', 'USSD window still visible after OK');
+      await loggingService.log('system', 'Network settling used because session unsafe');
+      await this.networkSettle(sessionId, options);
+    }
+
+    const clean = await this.waitForCleanDialerState();
     if (sessionId && this.session.sessionId !== sessionId) {
       return;
     }
-    this.session = {isActive: false, state: 'IDLE'};
-    await loggingService.log('system', 'USSD session released');
+    await this.releaseSession(clean);
   }
 
   private async networkSettle(
@@ -195,6 +223,48 @@ class UssdSessionLockService {
     return false;
   }
 
+  private async confirmCleanForImmediateDial() {
+    try {
+      const visible = await accessibilityNative.isUssdWindowVisible();
+      if (!visible) {
+        await loggingService.log('system', 'Pre-dial clean idle wait skipped');
+        return true;
+      }
+      await loggingService.log('system', 'USSD window still visible after OK');
+      await this.tryDismissStuckUssdWindow();
+      return false;
+    } catch {
+      await loggingService.log('system', 'Network settling used because session unsafe');
+      return false;
+    }
+  }
+
+  private async confirmPopupDismissedAfterResult(sessionId?: string) {
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < CLEAN_RELEASE_CONFIRM_TIMEOUT_MS) {
+      if (sessionId && this.session.sessionId !== sessionId) {
+        return false;
+      }
+      let visible = true;
+      try {
+        visible = await accessibilityNative.isUssdWindowVisible();
+      } catch {
+        return false;
+      }
+
+      if (!visible) {
+        await loggingService.log('system', 'USSD popup dismissed');
+        return true;
+      }
+
+      await this.tryDismissStuckUssdWindow();
+      await delay(CLEAN_RELEASE_CONFIRM_STEP_MS);
+    }
+
+    return false;
+  }
+
   private async tryDismissStuckUssdWindow() {
     try {
       if (await accessibilityNative.isUssdWindowVisible()) {
@@ -212,6 +282,20 @@ class UssdSessionLockService {
     return ['RESPONSE_RECEIVED', 'SUCCESS', 'FAILED', 'TIMEOUT'].includes(this.session.state);
   }
 
+  private canReleaseImmediatelyAfterCleanResult() {
+    return ['RESPONSE_RECEIVED', 'SUCCESS', 'FAILED'].includes(this.session.state);
+  }
+
+  private async releaseSession(safeForImmediateDial: boolean) {
+    this.session = {isActive: false, state: 'IDLE'};
+    this.lastReleaseSafeForImmediateDial = safeForImmediateDial;
+    if (safeForImmediateDial) {
+      await loggingService.log('system', 'Session lock released immediately');
+    }
+    await loggingService.log('system', 'USSD session released');
+    this.releaseCallback?.();
+  }
+
   private canMutate(sessionId?: string) {
     return this.session.isActive && (!sessionId || this.session.sessionId === sessionId);
   }
@@ -222,6 +306,7 @@ class UssdSessionLockService {
     }
     if (Date.now() - this.session.startedAt > STALE_SESSION_MS) {
       this.session = {isActive: false, state: 'IDLE'};
+      this.lastReleaseSafeForImmediateDial = false;
       void loggingService.log('system', 'Stale USSD session lock cleared');
     }
   }

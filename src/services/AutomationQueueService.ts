@@ -22,6 +22,9 @@ class AutomationQueueService {
     automationLockService.setIdleCallback(() => {
       void this.processNext();
     });
+    ussdSessionLockService.setReleaseCallback(() => {
+      void this.processNext();
+    });
   }
 
   hasQueuedOrActive(dedupeKey: string) {
