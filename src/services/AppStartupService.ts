@@ -15,6 +15,7 @@ import {appMetadataApiService} from './AppMetadataApiService';
 class AppStartupService {
   private initialBootstrapped = false;
   private authenticatedBootstrapped = false;
+  private authenticatedBootstrapInFlight?: Promise<void>;
 
   async bootstrapInitial() {
     if (this.initialBootstrapped) {
@@ -38,32 +39,42 @@ class AppStartupService {
     if (this.authenticatedBootstrapped) {
       return;
     }
-    const session = await supabaseAuthService.getCurrentSession();
-    const canStartFromOfflineCache = !session && supabaseAuthService.hasOfflineAuthCache();
-    if (!session && !canStartFromOfflineCache) {
-      return;
+    if (this.authenticatedBootstrapInFlight) {
+      return this.authenticatedBootstrapInFlight;
     }
 
-    const settings = useAppStore.getState().settings;
-    await permissionsService.ensureCriticalPermissions();
-    await accessibilityAutomationService.syncAutomationSettings(settings);
-    await accessibilityAutomationService.refreshStatus();
-    try {
-      await subscriptionGuardService.validateSubscription('startup');
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Unknown subscription validation error';
-      await loggingService.log('system', `Subscription validation failed during startup: ${message}`);
-    }
-    subscriptionGuardService.startPeriodicValidation();
-    automationService.subscribe();
-    await automationService.startBackgroundMonitoring();
-    await automationService.processPendingMessages();
-    await dashboardService.refresh();
-    useAppStore.getState().setLogs(await logRepository.list());
-    await appMetadataApiService.recordHeartbeat();
-    await loggingService.log('system', 'SarifPro startup completed');
-    await notificationService.show('Automation started', 'SarifPro background monitoring is active.');
-    this.authenticatedBootstrapped = true;
+    this.authenticatedBootstrapInFlight = (async () => {
+      const session = await supabaseAuthService.getCurrentSession();
+      const canStartFromOfflineCache = !session && supabaseAuthService.hasOfflineAuthCache();
+      if (!session && !canStartFromOfflineCache) {
+        return;
+      }
+
+      const settings = useAppStore.getState().settings;
+      await permissionsService.ensureCriticalPermissions();
+      await accessibilityAutomationService.syncAutomationSettings(settings);
+      await accessibilityAutomationService.refreshStatus();
+      try {
+        await subscriptionGuardService.validateSubscription('startup');
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown subscription validation error';
+        await loggingService.log('system', `Subscription validation failed during startup: ${message}`);
+      }
+      subscriptionGuardService.startPeriodicValidation();
+      automationService.subscribe();
+      await automationService.startBackgroundMonitoring();
+      await automationService.processPendingMessages();
+      await dashboardService.refresh();
+      useAppStore.getState().setLogs(await logRepository.list());
+      await appMetadataApiService.recordHeartbeat();
+      await loggingService.log('system', 'SarifPro startup completed');
+      await notificationService.show('Automation started', 'SarifPro background monitoring is active.');
+      this.authenticatedBootstrapped = true;
+    })().finally(() => {
+      this.authenticatedBootstrapInFlight = undefined;
+    });
+
+    return this.authenticatedBootstrapInFlight;
   }
 
   async bootstrap() {
@@ -73,6 +84,7 @@ class AppStartupService {
 
   resetAuthenticatedBootstrap() {
     this.authenticatedBootstrapped = false;
+    this.authenticatedBootstrapInFlight = undefined;
   }
 
   async refreshAll() {

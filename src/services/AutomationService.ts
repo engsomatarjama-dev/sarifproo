@@ -69,6 +69,7 @@ const BACKGROUND_OPTIONS: BackgroundTaskOptions & {parameters: BackgroundTaskDat
 
 class AutomationService {
   private subscribed = false;
+  private backgroundMonitoringStartInFlight?: Promise<void>;
 
   async processSms(payload: SmsPayload) {
     const settings = useAppStore.getState().settings;
@@ -211,33 +212,48 @@ class AutomationService {
   }
 
   async startBackgroundMonitoring() {
+    if (this.backgroundMonitoringStartInFlight) {
+      return this.backgroundMonitoringStartInFlight;
+    }
     if (BackgroundActions.isRunning()) {
       useAppStore.getState().setBackgroundRunning(true);
       await loggingService.log('system', 'Foreground balance service started');
       return;
     }
 
-    const task = async (taskDataArguments?: BackgroundTaskData) => {
-      const delay = taskDataArguments?.delay ?? 6000;
-      while (BackgroundActions.isRunning()) {
-        try {
-          await transactionConfirmationService.expireOutstanding();
-          await this.processPendingMessages();
-          await periodicBalanceCheckerService.tick();
-          if (useAppStore.getState().settings.periodicBalanceCheckerEnabled) {
-            await loggingService.log('system', 'Background balance check executed');
-          }
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          await loggingService.log('transaction_failed', `Background balance check failed: ${message}`);
-        }
-        await new Promise(resolve => setTimeout(resolve, delay));
+    this.backgroundMonitoringStartInFlight = (async () => {
+      if (BackgroundActions.isRunning()) {
+        useAppStore.getState().setBackgroundRunning(true);
+        await loggingService.log('system', 'Foreground balance service started');
+        return;
       }
-    };
 
-    await BackgroundActions.start(task, BACKGROUND_OPTIONS);
-    useAppStore.getState().setBackgroundRunning(true);
-    await loggingService.log('system', 'Foreground balance service started');
+      const task = async (taskDataArguments?: BackgroundTaskData) => {
+        const delay = taskDataArguments?.delay ?? 6000;
+        while (BackgroundActions.isRunning()) {
+          try {
+            await transactionConfirmationService.expireOutstanding();
+            await this.processPendingMessages();
+            await periodicBalanceCheckerService.tick();
+            if (useAppStore.getState().settings.periodicBalanceCheckerEnabled) {
+              await loggingService.log('system', 'Background balance check executed');
+            }
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            await loggingService.log('transaction_failed', `Background balance check failed: ${message}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      };
+
+      await BackgroundActions.start(task, BACKGROUND_OPTIONS);
+      useAppStore.getState().setBackgroundRunning(true);
+      await loggingService.log('system', 'Foreground balance service started');
+    })().finally(() => {
+      this.backgroundMonitoringStartInFlight = undefined;
+    });
+
+    return this.backgroundMonitoringStartInFlight;
   }
 
   async stopBackgroundMonitoring() {
