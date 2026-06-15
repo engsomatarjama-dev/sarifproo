@@ -16,6 +16,7 @@ This file tracks SarifPro APK releases and stability status.
 
 | Version | APK filename | Date | Stability status | Notes | Known issues |
 | --- | --- | --- | --- | --- | --- |
+| 1.0.43 | `SarifPro-v1.0.43.apk` | 2026-06-15 | Production release | Adds integrated terminal USSD error recovery: invalid PIN, insufficient balance, invalid menu, invalid MMI, timeout, network, and expired-session screens now fail locally without waiting for 898 confirmation. | Monitor real customer USSD error screens after rollout. |
 | 1.0.42 | `SarifPro-v1.0.42.apk` | 2026-06-15 | Production release | Promotes the tested startup/background stability improvements from internal build `6a5d412`; versionCode bumped to 43 for normal Android upgrades from 1.0.41. | Monitor real customer Direct Transfer and Dara-Salaam flows after rollout. |
 | 1.0.41 | `SarifPro-v1.0.41-INTERNAL-6a5d412.apk` | 2026-06-15 | Internal pre-release test | Includes `788b4c8`, `35779c6`, `cbdd3dc`, and `6a5d412`. Built for physical-device stability testing only; not released to customers. | Real money movement tests require operator-confirmed safe amount/account before production approval. |
 | 1.0.41 | `SarifPro-v1.0.41-USSD-SPEED.apk` | 2026-06-14 | V2 reliability test | Includes safe USSD session release optimization: clean terminal sessions skip the old 10 second pre/post clean-idle waits while unsafe sessions keep 30 second network settling. | V2 test build; validate on physical phones before production rollout. |
