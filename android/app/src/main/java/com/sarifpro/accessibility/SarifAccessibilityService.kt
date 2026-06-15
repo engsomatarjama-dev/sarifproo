@@ -291,7 +291,7 @@ class SarifAccessibilityService : AccessibilityService() {
                 isLikelyUssdResultShell(normalized)
             ) {
                 debugLog("Unknown final result text=${redactFinalResultForDebug(screenText)}")
-                storeFinalResult(screenText, "failed", "unknown", UNKNOWN_USSD_RESULT_REASON)
+                storeFinalResult(screenText, "unknown_result", "unknown", UNKNOWN_USSD_RESULT_REASON)
             } else {
                 return false
             }
@@ -525,7 +525,7 @@ class SarifAccessibilityService : AccessibilityService() {
         return when {
             matchesAny(text, ERROR_PATTERNS) -> "failed"
             matchesAny(text, SUCCESS_PATTERNS) || matchesAny(text, BANK_SUCCESS_PATTERNS) -> "completed"
-            else -> "failed"
+            else -> "unknown_result"
         }
     }
 
@@ -656,6 +656,7 @@ class SarifAccessibilityService : AccessibilityService() {
         val state = when (status) {
             "completed" -> FINAL_RESULT_SUCCESS
             "failed" -> FINAL_RESULT_ERROR
+            "unknown_result" -> FINAL_RESULT_UNKNOWN
             else -> FINAL_RESULT_UNKNOWN
         }
         val classification = when {
@@ -663,6 +664,7 @@ class SarifAccessibilityService : AccessibilityService() {
             status == "completed" && transactionType == "bank_deposit" -> BANK_DEPOSIT_SUCCESS
             status == "failed" && transactionType == "bank_deposit" -> BANK_DEPOSIT_FAILED
             status == "failed" -> DIRECT_TRANSFER_FAILED
+            status == "unknown_result" -> RESULT_UNEXPECTED
             else -> RESULT_UNEXPECTED
         }
         val storedMessage = if (transactionType == "direct_transfer" || transactionType == "bank_deposit") {

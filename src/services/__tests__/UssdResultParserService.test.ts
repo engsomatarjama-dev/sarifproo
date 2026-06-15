@@ -108,11 +108,11 @@ describe('UssdResultParserService', () => {
     expect(result.failureReason).toBe('connection problem');
   });
 
-  it('treats unexpected final USSD screens as failed', () => {
+  it('treats unexpected final USSD screens as unknown results', () => {
     const result = ussdResultParserService.parse('<-ADEEGA SARIFKA-> Fariin aan la garanayn. OK');
 
-    expect(result.status).toBe('failed');
-    expect(result.classification).toBe('FAILED_RESULT');
+    expect(result.status).toBe('unknown_result');
+    expect(result.classification).toBe('UNKNOWN_RESULT');
     expect(result.failureReason).toBe('unknown_or_unexpected_ussd_result');
   });
 });
