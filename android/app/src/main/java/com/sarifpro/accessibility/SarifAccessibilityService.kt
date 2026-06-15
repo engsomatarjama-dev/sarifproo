@@ -291,7 +291,7 @@ class SarifAccessibilityService : AccessibilityService() {
                 isLikelyUssdResultShell(normalized)
             ) {
                 debugLog("Unknown final result text=${redactFinalResultForDebug(screenText)}")
-                storeFinalResult(screenText, "unknown_result", "unknown", UNKNOWN_USSD_RESULT_REASON)
+                storeFinalResult(screenText, "unknown_result", "unknown", UNKNOWN_USSD_RESULT_REASON, UNKNOWN_USSD_RESULT_REASON)
             } else {
                 return false
             }
@@ -299,7 +299,8 @@ class SarifAccessibilityService : AccessibilityService() {
             val status = classifyFinalStatus(normalized)
             val transactionType = classifyFinalTransactionType(normalized)
             val failureReason = if (status == "failed") extractFailureReason(normalized) else ""
-            storeFinalResult(screenText, status, transactionType, failureReason)
+            val errorCode = if (status == "failed") extractErrorCode(normalized) else ""
+            storeFinalResult(screenText, status, transactionType, failureReason, errorCode)
         }
 
         if (!allowScreenAction(WAITING_FINAL_RESULT, normalized)) {
@@ -365,7 +366,7 @@ class SarifAccessibilityService : AccessibilityService() {
                     return
                 }
                 val transactionType = classifyFinalTransactionType(normalizedScreenText)
-                storeFinalResult(rawScreenText, "completed", transactionType, "")
+                storeFinalResult(rawScreenText, "completed", transactionType, "", "")
                 val dismissed = clickResultDismiss(roots)
                 debugLog("Transfer success result detected during balance flow and dismiss clicked=$dismissed")
                 if (dismissed) {
@@ -543,8 +544,36 @@ class SarifAccessibilityService : AccessibilityService() {
         return ERROR_KEYWORDS.firstOrNull { keyword -> text.contains(keyword) } ?: UNKNOWN_USSD_RESULT_REASON
     }
 
+    private fun extractErrorCode(text: String): String {
+        return when {
+            Regex("""invalid\s+pin""").containsMatchIn(text) -> "invalid_pin"
+            Regex("""pin\s+incorrect""").containsMatchIn(text) -> "pin_incorrect"
+            Regex("""connection\s+problem\s+or\s+invalid\s+mmi\s+code|invalid\s+mmi(?:\s+code)?|mmi\s+code""").containsMatchIn(text) -> "invalid_mmi"
+            Regex("""network\s+error""").containsMatchIn(text) -> "network_error"
+            Regex("""connection\s+problem""").containsMatchIn(text) -> "connection_problem"
+            Regex("""service\s+unavailable""").containsMatchIn(text) -> "service_unavailable"
+            Regex("""request\s+timed\s+out|timed\s+out|time\s+out|timeout""").containsMatchIn(text) -> "timeout"
+            Regex("""session\s+expired""").containsMatchIn(text) -> "session_expired"
+            Regex("""invalid\s+input""").containsMatchIn(text) -> "invalid_input"
+            Regex("""invalid\s+menu|please\s+select\s+valid\s+option""").containsMatchIn(text) -> "invalid_menu"
+            Regex("""transaction\s+failed""").containsMatchIn(text) -> "transaction_failed"
+            Regex("""transfer\s+failed""").containsMatchIn(text) -> "transfer_failed"
+            Regex("""hadhaagaagu\s+kuguma\s+filna|lacagta\s+kuguma\s+filna|kuguma\s+filna|kuma\s+filna|insufficient\s+funds|balance\s+insufficient|not\s+enough\s+balance|insufficient""").containsMatchIn(text) -> "insufficient_balance"
+            Regex("""failed""").containsMatchIn(text) -> "generic_failed"
+            Regex("""error""").containsMatchIn(text) -> "generic_error"
+            Regex("""qalad|khalad""").containsMatchIn(text) -> "somali_error"
+            Regex("""ma\s+dhicin|lama\s+fulin""").containsMatchIn(text) -> "not_completed"
+            Regex("""try\s+again|isku\s+day\s+mar\s+kale""").containsMatchIn(text) -> "try_again"
+            else -> UNKNOWN_USSD_RESULT_REASON
+        }
+    }
+
     private fun failureReasonForUnexpected(text: String): String {
         return if (looksLikeFinalFailureResult(text)) extractFailureReason(text) else UNKNOWN_USSD_RESULT_REASON
+    }
+
+    private fun errorCodeForUnexpected(text: String): String {
+        return if (looksLikeFinalFailureResult(text)) extractErrorCode(text) else UNKNOWN_USSD_RESULT_REASON
     }
 
     private fun looksLikeBalanceResult(text: String): Boolean {
@@ -558,7 +587,7 @@ class SarifAccessibilityService : AccessibilityService() {
         failureReason: String
     ): Boolean {
         val normalized = normalizeFinalResultText(screenText)
-        storeFinalResult(screenText, "failed", transactionType, failureReason)
+        storeFinalResult(screenText, "failed", transactionType, failureReason, errorCodeForUnexpected(normalized))
         if (!allowScreenAction(RECOVERY_RESET, normalized)) {
             return false
         }
@@ -652,7 +681,7 @@ class SarifAccessibilityService : AccessibilityService() {
             .trim()
     }
 
-    private fun storeFinalResult(message: String, status: String, transactionType: String, failureReason: String) {
+    private fun storeFinalResult(message: String, status: String, transactionType: String, failureReason: String, errorCode: String) {
         val state = when (status) {
             "completed" -> FINAL_RESULT_SUCCESS
             "failed" -> FINAL_RESULT_ERROR
@@ -679,6 +708,7 @@ class SarifAccessibilityService : AccessibilityService() {
             .putString("final_result_transaction_type", transactionType)
             .putString("final_result_message", storedMessage)
             .putString("final_result_failure_reason", failureReason)
+            .putString("final_result_error_code", errorCode)
             .putString("final_result_amount", extractFirstAmount(message))
             .putString("final_result_receiver_name", extractReceiverName(message))
             .putString("final_result_receiver_phone", extractReceiverPhone(message))
@@ -1300,8 +1330,12 @@ class SarifAccessibilityService : AccessibilityService() {
             "pin incorrect",
             "network error",
             "connection problem",
+            "connection problem or invalid mmi code",
             "service unavailable",
             "timeout",
+            "time out",
+            "timed out",
+            "request timed out",
             "try again",
             "session expired",
             "invalid input",
@@ -1319,6 +1353,12 @@ class SarifAccessibilityService : AccessibilityService() {
             "ma dhicin",
             "lama fulin",
             "insufficient",
+            "insufficient funds",
+            "balance insufficient",
+            "not enough balance",
+            "hadhaagaagu kuguma filna",
+            "lacagta kuguma filna",
+            "kuguma filna",
             "kuma filna",
             "isku day mar kale",
         )
@@ -1343,8 +1383,9 @@ class SarifAccessibilityService : AccessibilityService() {
             Regex("""pin\s+incorrect"""),
             Regex("""network\s+error"""),
             Regex("""connection\s+problem"""),
+            Regex("""connection\s+problem\s+or\s+invalid\s+mmi\s+code"""),
             Regex("""service\s+unavailable"""),
-            Regex("""timeout"""),
+            Regex("""request\s+timed\s+out|timed\s+out|time\s+out|timeout"""),
             Regex("""try\s+again"""),
             Regex("""session\s+expired"""),
             Regex("""invalid\s+input"""),
@@ -1360,8 +1401,7 @@ class SarifAccessibilityService : AccessibilityService() {
             Regex("""khalad"""),
             Regex("""ma\s+dhicin"""),
             Regex("""lama\s+fulin"""),
-            Regex("""insufficient"""),
-            Regex("""kuma\s+filna"""),
+            Regex("""hadhaagaagu\s+kuguma\s+filna|lacagta\s+kuguma\s+filna|kuguma\s+filna|kuma\s+filna|insufficient\s+funds|balance\s+insufficient|not\s+enough\s+balance|insufficient"""),
             Regex("""isku\s+day\s+mar\s+kale"""),
         )
     }

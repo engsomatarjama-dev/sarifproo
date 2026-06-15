@@ -79,6 +79,7 @@ export interface Transaction {
   timestamp: number;
   resultMessage?: string;
   failureReason?: string;
+  errorCode?: string;
   completedAt?: number;
   confirmationSource?: '898_sms';
   confirmedAmount?: number;
@@ -118,6 +119,7 @@ export interface UssdFinalResult {
   receiverPhone?: string;
   bankAccount?: string;
   failureReason?: string;
+  errorCode?: string;
   dismissed: boolean;
   timestamp: number;
 }

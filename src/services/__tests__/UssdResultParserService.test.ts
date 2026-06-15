@@ -82,6 +82,7 @@ describe('UssdResultParserService', () => {
     expect(result.status).toBe('failed');
     expect(result.classification).toBe('FAILED_RESULT');
     expect(result.failureReason).toBe('invalid pin');
+    expect(result.errorCode).toBe('invalid_pin');
   });
 
   it('classifies network error screens as failed', () => {
@@ -90,6 +91,7 @@ describe('UssdResultParserService', () => {
     expect(result.status).toBe('failed');
     expect(result.classification).toBe('FAILED_RESULT');
     expect(result.failureReason).toBe('network error');
+    expect(result.errorCode).toBe('network_error');
   });
 
   it('classifies invalid menu screens as failed terminal USSD results', () => {
@@ -98,6 +100,7 @@ describe('UssdResultParserService', () => {
     expect(result.status).toBe('failed');
     expect(result.classification).toBe('FAILED_RESULT');
     expect(result.failureReason).toBe('invalid menu');
+    expect(result.errorCode).toBe('invalid_menu');
   });
 
   it('classifies invalid MMI code screens as failed terminal USSD results', () => {
@@ -105,7 +108,8 @@ describe('UssdResultParserService', () => {
 
     expect(result.status).toBe('failed');
     expect(result.classification).toBe('FAILED_RESULT');
-    expect(result.failureReason).toBe('connection problem');
+    expect(result.failureReason).toBe('invalid mmi code');
+    expect(result.errorCode).toBe('invalid_mmi');
   });
 
   it('treats unexpected final USSD screens as unknown results', () => {
@@ -114,5 +118,6 @@ describe('UssdResultParserService', () => {
     expect(result.status).toBe('unknown_result');
     expect(result.classification).toBe('UNKNOWN_RESULT');
     expect(result.failureReason).toBe('unknown_or_unexpected_ussd_result');
+    expect(result.errorCode).toBeUndefined();
   });
 });

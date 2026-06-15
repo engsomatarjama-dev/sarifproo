@@ -32,6 +32,7 @@ class DatabaseService {
       ['transaction_type', `ALTER TABLE transactions ADD COLUMN transaction_type TEXT`],
       ['result_message', `ALTER TABLE transactions ADD COLUMN result_message TEXT`],
       ['failure_reason', `ALTER TABLE transactions ADD COLUMN failure_reason TEXT`],
+      ['error_code', `ALTER TABLE transactions ADD COLUMN error_code TEXT`],
       ['completed_at', `ALTER TABLE transactions ADD COLUMN completed_at INTEGER`],
       ['confirmation_source', `ALTER TABLE transactions ADD COLUMN confirmation_source TEXT`],
       ['confirmed_amount', `ALTER TABLE transactions ADD COLUMN confirmed_amount REAL`],

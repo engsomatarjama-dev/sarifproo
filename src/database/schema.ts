@@ -11,6 +11,7 @@ export const schemaStatements = [
       timestamp INTEGER NOT NULL,
       result_message TEXT,
       failure_reason TEXT,
+      error_code TEXT,
       completed_at INTEGER,
       confirmation_source TEXT,
       confirmed_amount REAL,

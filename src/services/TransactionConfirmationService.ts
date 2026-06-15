@@ -22,6 +22,7 @@ const resultToAwaitingPayload = (result: UssdFinalResult) => ({
     result.status === 'failed' || result.status === 'unknown_result'
       ? result.failureReason ?? result.message ?? 'awaiting_898_confirmation'
       : undefined,
+  errorCode: result.errorCode,
   completedAt: undefined,
 });
 
@@ -45,6 +46,21 @@ class TransactionConfirmationService {
       await transactionRepository.completeFromUssdResult(reference, ussdResult);
       await loggingService.log('transaction_completed', 'Transaction completed from USSD success result');
       await loggingService.log('system', '898 confirmation remains optional after USSD success');
+      await dashboardService.refresh();
+      await automationLockService.release(reference);
+      return;
+    }
+
+    if (ussdResult.status === 'failed' || ussdResult.status === 'unknown_result') {
+      await transactionRepository.updateResult(reference, {
+        status: ussdResult.status,
+        transactionType: ussdResult.transactionType,
+        resultMessage: ussdResult.message,
+        failureReason: ussdResult.failureReason ?? ussdResult.message ?? 'terminal_ussd_error',
+        errorCode: ussdResult.errorCode ?? ussdResult.failureReason ?? 'terminal_ussd_error',
+        completedAt: Date.now(),
+      });
+      await loggingService.log('transaction_failed', 'Terminal USSD error finalized without 898 confirmation wait');
       await dashboardService.refresh();
       await automationLockService.release(reference);
       return;

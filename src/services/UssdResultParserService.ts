@@ -64,6 +64,7 @@ class UssdResultParserService {
       classification,
       transactionType,
       message: storedMessage,
+      errorCode: terminalError?.code,
       amount: toAmount(firstMatch(message, [/\$\s*([\d,.]+)/])),
       receiverName: firstMatch(message, [/u\s+dirtay\s+(.+?)\(\d{7,15}\)/i]),
       receiverPhone: firstMatch(message, [/\((\d{7,15})\)/]),

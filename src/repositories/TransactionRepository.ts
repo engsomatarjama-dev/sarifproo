@@ -26,6 +26,7 @@ const mapRow = (row: any): Transaction => ({
   timestamp: Number(row.timestamp),
   resultMessage: row.result_message ?? undefined,
   failureReason: row.failure_reason ?? undefined,
+  errorCode: row.error_code ?? undefined,
   completedAt: row.completed_at ? Number(row.completed_at) : undefined,
   confirmationSource: row.confirmation_source ?? undefined,
   confirmedAmount: row.confirmed_amount !== null && row.confirmed_amount !== undefined ? Number(row.confirmed_amount) : undefined,
@@ -49,12 +50,12 @@ export const transactionRepository = {
     await databaseService.executeSql(
       `INSERT INTO transactions (
         type, transaction_type, amount, phone, reference, status, sms_body, timestamp,
-        result_message, failure_reason, completed_at, confirmation_source, confirmed_amount,
+        result_message, failure_reason, error_code, completed_at, confirmation_source, confirmed_amount,
         confirmation_reference, receiver_name, receiver_phone, bank_account, transaction_date,
         confirmation_note, confirmation_started_at, confirmation_expires_at,
         source, source_reference, dedupe_key, related_event_id, transfer_destination
        )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         transaction.type,
         transaction.transactionType ?? transaction.type,
@@ -66,6 +67,7 @@ export const transactionRepository = {
         transaction.timestamp,
         transaction.resultMessage ?? null,
         transaction.failureReason ?? null,
+        transaction.errorCode ?? null,
         transaction.completedAt ?? null,
         transaction.confirmationSource ?? null,
         transaction.confirmedAmount ?? null,
@@ -92,17 +94,18 @@ export const transactionRepository = {
 
   async updateResult(
     reference: string,
-    result: Pick<Transaction, 'status' | 'transactionType' | 'resultMessage' | 'failureReason' | 'completedAt'>,
+    result: Pick<Transaction, 'status' | 'transactionType' | 'resultMessage' | 'failureReason' | 'errorCode' | 'completedAt'>,
   ) {
     await databaseService.executeSql(
       `UPDATE transactions
-       SET status = ?, transaction_type = ?, result_message = ?, failure_reason = ?, completed_at = ?
+       SET status = ?, transaction_type = ?, result_message = ?, failure_reason = ?, error_code = ?, completed_at = ?
        WHERE reference = ? AND status != 'completed'`,
       [
         result.status,
         result.transactionType ?? null,
         result.resultMessage ?? null,
         result.failureReason ?? null,
+        result.errorCode ?? null,
         result.completedAt ?? Date.now(),
         reference,
       ],
@@ -111,7 +114,7 @@ export const transactionRepository = {
 
   async markAwaitingConfirmation(
     reference: string,
-    result: Pick<Transaction, 'transactionType' | 'resultMessage' | 'failureReason' | 'completedAt'>,
+    result: Pick<Transaction, 'transactionType' | 'resultMessage' | 'failureReason' | 'errorCode' | 'completedAt'>,
     confirmationStartedAt = Date.now(),
     confirmationExpiresAt = confirmationStartedAt + 60_000,
   ) {
@@ -121,6 +124,7 @@ export const transactionRepository = {
            transaction_type = COALESCE(?, transaction_type),
            result_message = ?,
            failure_reason = ?,
+           error_code = ?,
            completed_at = NULL,
            confirmation_started_at = ?,
            confirmation_expires_at = ?
@@ -130,6 +134,7 @@ export const transactionRepository = {
         result.transactionType ?? null,
         result.resultMessage ?? null,
         result.failureReason ?? null,
+        result.errorCode ?? null,
         confirmationStartedAt,
         confirmationExpiresAt,
         reference,
@@ -150,6 +155,7 @@ export const transactionRepository = {
            amount = COALESCE(?, amount),
            result_message = ?,
            failure_reason = NULL,
+           error_code = NULL,
            completed_at = ?,
            receiver_name = COALESCE(?, receiver_name),
            receiver_phone = COALESCE(?, receiver_phone),
@@ -185,6 +191,7 @@ export const transactionRepository = {
            transaction_date = COALESCE(?, transaction_date),
            confirmation_note = ?,
            failure_reason = NULL,
+           error_code = NULL,
            completed_at = ?,
            confirmation_expires_at = NULL
        WHERE id = ?`,
@@ -305,6 +312,7 @@ export const transactionRepository = {
       `UPDATE transactions
        SET status = 'failed',
            failure_reason = 'confirmation_sms_not_received',
+           error_code = 'confirmation_sms_not_received',
            completed_at = NULL
        WHERE status = 'awaiting_confirmation'
          AND confirmation_expires_at IS NOT NULL
