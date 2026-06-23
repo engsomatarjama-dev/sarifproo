@@ -39,6 +39,17 @@ class AutomationLockService {
     return this.activeJob;
   }
 
+  getSnapshot() {
+    return {
+      locked: this.state !== 'IDLE',
+      activeJobId: this.activeJob?.id,
+      activeJobType: this.activeJob?.type,
+      startedAt: this.activeJob?.startedAt,
+      ageMs: this.activeJob ? Date.now() - this.activeJob.startedAt : 0,
+      state: this.state,
+    };
+  }
+
   isIdle() {
     return this.state === 'IDLE';
   }
@@ -123,6 +134,16 @@ class AutomationLockService {
     await loggingService.log('system', 'Automation lock released');
     this.onIdle?.();
     return jobId;
+  }
+
+  async releaseIfStale(reason: string, thresholdMs: number) {
+    if (!this.activeJob || Date.now() - this.activeJob.startedAt <= thresholdMs) {
+      return false;
+    }
+    await loggingService.log('system', 'Stale automation lock detected');
+    await this.recover(reason);
+    await loggingService.log('system', 'Automation lock released');
+    return true;
   }
 
   private armTimeout(jobId: string) {

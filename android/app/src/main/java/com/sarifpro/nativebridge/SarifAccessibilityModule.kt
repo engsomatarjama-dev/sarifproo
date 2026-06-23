@@ -237,6 +237,18 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
     }
 
     @ReactMethod
+    fun getAutomationHealth(promise: Promise) {
+        val health = SarifAccessibilityService.automationHealth()
+        val map = Arguments.createMap()
+        map.putBoolean("connected", health["connected"] as? Boolean ?: false)
+        map.putBoolean("active", health["active"] as? Boolean ?: false)
+        map.putString("mode", health["mode"] as? String ?: "")
+        map.putDouble("lastAccessibilityEventAt", ((health["lastAccessibilityEventAt"] as? Long) ?: 0L).toDouble())
+        map.putDouble("lastScreenProcessedAt", ((health["lastScreenProcessedAt"] as? Long) ?: 0L).toDouble())
+        promise.resolve(map)
+    }
+
+    @ReactMethod
     fun extendAutomation(durationMs: Double?, promise: Promise) {
         val safeDuration = durationMs?.toLong()?.coerceIn(5_000L, 45_000L) ?: 30_000L
         reactContext

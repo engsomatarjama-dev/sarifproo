@@ -15,6 +15,7 @@ import {periodicBalanceCheckerService} from '../automation/PeriodicBalanceChecke
 import {transactionConfirmationService} from './TransactionConfirmationService';
 import {automationQueueService} from './AutomationQueueService';
 import {truncateToTwoDecimals} from '../utils/ussd';
+import {automationWatchdogService} from './AutomationWatchdogService';
 
 type BackgroundTaskData = {delay: number};
 
@@ -70,6 +71,10 @@ const BACKGROUND_OPTIONS: BackgroundTaskOptions & {parameters: BackgroundTaskDat
 class AutomationService {
   private subscribed = false;
   private backgroundMonitoringStartInFlight?: Promise<void>;
+
+  constructor() {
+    automationWatchdogService.setWorkerRestartHandler(() => this.restartBackgroundMonitoring());
+  }
 
   async processSms(payload: SmsPayload) {
     const settings = useAppStore.getState().settings;
@@ -235,6 +240,7 @@ class AutomationService {
             await transactionConfirmationService.expireOutstanding();
             await this.processPendingMessages();
             await periodicBalanceCheckerService.tick();
+            automationWatchdogService.recordWorkerHeartbeat();
             if (useAppStore.getState().settings.periodicBalanceCheckerEnabled) {
               await loggingService.log('system', 'Background balance check executed');
             }
@@ -248,6 +254,8 @@ class AutomationService {
 
       await BackgroundActions.start(task, BACKGROUND_OPTIONS);
       useAppStore.getState().setBackgroundRunning(true);
+      automationWatchdogService.recordWorkerHeartbeat();
+      automationWatchdogService.start();
       await loggingService.log('system', 'Foreground balance service started');
     })().finally(() => {
       this.backgroundMonitoringStartInFlight = undefined;
@@ -262,6 +270,14 @@ class AutomationService {
       await loggingService.log('system', 'Foreground balance service stopped');
     }
     useAppStore.getState().setBackgroundRunning(false);
+  }
+
+  async restartBackgroundMonitoring() {
+    if (BackgroundActions.isRunning()) {
+      await BackgroundActions.stop();
+    }
+    useAppStore.getState().setBackgroundRunning(false);
+    await this.startBackgroundMonitoring();
   }
 }
 

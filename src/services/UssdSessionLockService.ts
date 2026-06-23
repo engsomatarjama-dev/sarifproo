@@ -36,6 +36,7 @@ export class UssdSessionLockService {
   private session: ActiveUssdSession = {isActive: false, state: 'IDLE'};
   private lastReleaseSafeForImmediateDial = false;
   private releaseCallback?: () => void;
+  private lastKnownWindowVisible?: boolean;
 
   setReleaseCallback(callback: () => void) {
     this.releaseCallback = callback;
@@ -43,6 +44,19 @@ export class UssdSessionLockService {
 
   getActiveSession() {
     return {...this.session};
+  }
+
+  getSnapshot() {
+    return {
+      active: this.session.isActive,
+      sessionId: this.session.sessionId,
+      flow: this.session.currentFlow,
+      startedAt: this.session.startedAt,
+      ageMs: this.session.startedAt ? Date.now() - this.session.startedAt : 0,
+      settling: this.session.state === 'NETWORK_SETTLING',
+      state: this.session.state,
+      lastKnownWindowVisible: this.lastKnownWindowVisible,
+    };
   }
 
   isActive() {
@@ -55,7 +69,10 @@ export class UssdSessionLockService {
       return true;
     }
     try {
-      return (await accessibilityNative.isAutomationActive()) || (await accessibilityNative.isUssdWindowVisible());
+      const automationActive = await accessibilityNative.isAutomationActive();
+      const windowVisible = await accessibilityNative.isUssdWindowVisible();
+      this.lastKnownWindowVisible = windowVisible;
+      return automationActive || windowVisible;
     } catch {
       return false;
     }
@@ -156,6 +173,32 @@ export class UssdSessionLockService {
     await this.releaseSession(clean);
   }
 
+  async releaseIfStaleAndNoWindowVisible(reason: string, thresholdMs: number) {
+    if (!this.session.isActive || !this.session.startedAt || Date.now() - this.session.startedAt <= thresholdMs) {
+      return false;
+    }
+
+    await loggingService.log('system', 'Stale USSD session detected');
+    let visible = false;
+    try {
+      visible = await accessibilityNative.isUssdWindowVisible();
+      this.lastKnownWindowVisible = visible;
+    } catch {
+      visible = true;
+      this.lastKnownWindowVisible = true;
+    }
+
+    if (visible) {
+      await this.tryDismissStuckUssdWindow();
+      await loggingService.log('system', 'USSD lock not released because popup visible');
+      return false;
+    }
+
+    await loggingService.log('system', reason);
+    await this.releaseSession(false);
+    return true;
+  }
+
   private async networkSettle(
     sessionId?: string,
     options: {
@@ -208,6 +251,7 @@ export class UssdSessionLockService {
       let visible = false;
       try {
         visible = await accessibilityNative.isUssdWindowVisible();
+        this.lastKnownWindowVisible = visible;
       } catch {
         visible = false;
       }
@@ -232,6 +276,7 @@ export class UssdSessionLockService {
   private async confirmCleanForImmediateDial() {
     try {
       const visible = await accessibilityNative.isUssdWindowVisible();
+      this.lastKnownWindowVisible = visible;
       if (!visible) {
         await loggingService.log('system', 'Pre-dial clean idle wait skipped');
         return true;
@@ -259,6 +304,7 @@ export class UssdSessionLockService {
       let visible = true;
       try {
         visible = await accessibilityNative.isUssdWindowVisible();
+        this.lastKnownWindowVisible = visible;
       } catch {
         return false;
       }
@@ -279,10 +325,14 @@ export class UssdSessionLockService {
   private async tryDismissStuckUssdWindow() {
     try {
       if (await accessibilityNative.isUssdWindowVisible()) {
+        this.lastKnownWindowVisible = true;
         const dismissed = await accessibilityNative.dismissVisibleUssdWindow();
         if (dismissed) {
+          this.lastKnownWindowVisible = false;
           await loggingService.log('system', 'Stuck USSD dialog dismissed before next dial');
         }
+      } else {
+        this.lastKnownWindowVisible = false;
       }
     } catch {
       // Visibility cleanup is best effort; the lock still protects the next dial.

@@ -20,6 +20,12 @@ class PeriodicBalanceCheckerService {
   private running = false;
   private continuousModeLogged = false;
   private continuousTimer?: ReturnType<typeof setTimeout>;
+  private currentCycleId?: string;
+  private currentCycleStartedAt?: number;
+  private lastStartedAt?: number;
+  private lastCompletedAt?: number;
+  private nextScheduledAt?: number;
+  private lastError?: string;
 
   getNextScheduledTimestamp() {
     const settings = useAppStore.getState().settings;
@@ -31,6 +37,31 @@ class PeriodicBalanceCheckerService {
       return Date.now();
     }
     return last + settings.balanceCheckIntervalMinutes * 60 * 1000;
+  }
+
+  getSnapshot() {
+    return {
+      running: this.running,
+      currentCycleId: this.currentCycleId,
+      currentCycleStartedAt: this.currentCycleStartedAt,
+      lastStartedAt: this.lastStartedAt,
+      lastCompletedAt: this.lastCompletedAt,
+      nextScheduledAt: this.nextScheduledAt ?? this.getNextScheduledTimestamp(),
+      lastError: this.lastError,
+    };
+  }
+
+  resetStaleCycle(reason: string) {
+    if (!this.running) {
+      return false;
+    }
+    this.running = false;
+    this.currentCycleId = undefined;
+    this.currentCycleStartedAt = undefined;
+    this.lastError = reason;
+    void loggingService.log('system', 'Balance cycle reset');
+    this.scheduleContinuousCycle(0);
+    return true;
   }
 
   async tick() {
@@ -95,6 +126,10 @@ class PeriodicBalanceCheckerService {
 
     this.running = true;
     const startedAt = Date.now();
+    this.currentCycleId = `balance-cycle-${startedAt}`;
+    this.currentCycleStartedAt = startedAt;
+    this.lastStartedAt = startedAt;
+    this.lastError = undefined;
     let failedCycle = false;
     let pendingConfirmationReference: string | undefined;
     let pendingConfirmationType: 'direct_transfer' | 'bank_deposit' = 'direct_transfer';
@@ -215,6 +250,7 @@ class PeriodicBalanceCheckerService {
       void loggingService.log('system', 'Balance Cycle Completed');
     } catch (error) {
       failedCycle = true;
+      this.lastError = error instanceof Error ? error.message : String(error);
       if (pendingConfirmationReference) {
         await transactionRepository.updateResult(pendingConfirmationReference, {
           status: 'failed',
@@ -228,8 +264,11 @@ class PeriodicBalanceCheckerService {
       void loggingService.log('transaction_failed', `Balance check failed: ${error instanceof Error ? error.message : String(error)}`);
       void notificationService.show('Transfer failed', 'Periodic balance check failed.');
     } finally {
+      this.lastCompletedAt = Date.now();
       duplicateGuardService.rememberBalanceCheckNow();
       this.running = false;
+      this.currentCycleId = undefined;
+      this.currentCycleStartedAt = undefined;
       void loggingService.log('system', 'Automation Returned To Idle');
       this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
     }
@@ -248,10 +287,15 @@ class PeriodicBalanceCheckerService {
     if (this.continuousTimer) {
       clearTimeout(this.continuousTimer);
     }
-    timingLogService.log('system', `next_balance_check_scheduled_at=${Date.now() + delayMs}`);
+    this.nextScheduledAt = Date.now() + delayMs;
+    timingLogService.log('system', `next_balance_check_scheduled_at=${this.nextScheduledAt}`);
     this.continuousTimer = setTimeout(() => {
       this.continuousTimer = undefined;
-      void this.tick();
+      void this.tick().catch(error => {
+        this.lastError = error instanceof Error ? error.message : String(error);
+        void loggingService.log('system', `Balance checker tick failed: ${this.lastError}`);
+        this.scheduleContinuousCycle(30_000);
+      });
     }, delayMs);
   }
 

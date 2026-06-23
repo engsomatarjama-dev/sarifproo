@@ -30,6 +30,13 @@ type AccessibilityNativeModule = {
   isAutomationActive: () => Promise<boolean>;
   isUssdWindowVisible: () => Promise<boolean>;
   dismissVisibleUssdWindow: () => Promise<boolean>;
+  getAutomationHealth: () => Promise<{
+    connected: boolean;
+    active: boolean;
+    mode: string;
+    lastAccessibilityEventAt: number;
+    lastScreenProcessedAt: number;
+  }>;
   extendAutomation: (durationMs?: number) => Promise<void>;
   resetAutomation: () => Promise<void>;
 };

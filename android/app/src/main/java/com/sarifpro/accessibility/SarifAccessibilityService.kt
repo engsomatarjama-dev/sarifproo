@@ -28,6 +28,8 @@ class SarifAccessibilityService : AccessibilityService() {
     private var daraRetries = 0
     private var lastScreenFingerprint = ""
     private var lastScreenFingerprintAt: Long = 0L
+    private var lastAccessibilityEventAt: Long = 0L
+    private var lastScreenProcessedAt: Long = 0L
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) {
@@ -35,6 +37,7 @@ class SarifAccessibilityService : AccessibilityService() {
         }
 
         val packageName = event.packageName?.toString().orEmpty()
+        lastAccessibilityEventAt = System.currentTimeMillis()
         if (packageName.contains("phone", ignoreCase = true) || packageName.contains("dialer", ignoreCase = true)) {
             debugLog("Accessibility event=${eventTypeName(event.eventType)} package=$packageName armed=${isAutomationArmed()} mode=${automationMode()}")
         }
@@ -65,6 +68,7 @@ class SarifAccessibilityService : AccessibilityService() {
         if (!isAutomationArmed()) {
             return
         }
+        lastScreenProcessedAt = System.currentTimeMillis()
         if (automationMode() != MODE_BALANCE_CHECK && finalResultState() == WAITING_FINAL_RESULT) {
             tryHandleFinalResult(source)
             return
@@ -1261,6 +1265,17 @@ class SarifAccessibilityService : AccessibilityService() {
 
         fun dismissVisibleUssdWindow(): Boolean {
             return instance?.dismissVisibleUssdWindowSafely() ?: false
+        }
+
+        fun automationHealth(): Map<String, Any> {
+            val service = instance
+            return mapOf(
+                "connected" to (service != null),
+                "active" to (service?.isAutomationArmed() ?: false),
+                "mode" to (service?.automationMode() ?: ""),
+                "lastAccessibilityEventAt" to (service?.lastAccessibilityEventAt ?: 0L),
+                "lastScreenProcessedAt" to (service?.lastScreenProcessedAt ?: 0L),
+            )
         }
 
         private val INPUT_FIELD_VIEW_IDS = setOf(

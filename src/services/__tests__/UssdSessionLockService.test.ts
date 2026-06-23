@@ -102,4 +102,45 @@ describe('UssdSessionLockService', () => {
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Session lock released immediately');
     expect(mockedLogging.log).not.toHaveBeenCalledWith('system', 'Entering NETWORK_SETTLING');
   });
+
+  it('does not release a stale USSD lock while a popup is still visible', async () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'DIRECT_TRANSFER-STALE',
+      startedAt: Date.now() - 181_000,
+      currentFlow: 'DIRECT_TRANSFER',
+      state: 'DIALING',
+    };
+    mockedAccessibility.isUssdWindowVisible.mockResolvedValue(true);
+    mockedAccessibility.dismissVisibleUssdWindow.mockResolvedValue(false);
+
+    const released = await service.releaseIfStaleAndNoWindowVisible('watchdog_ussd_session_stale', 180_000);
+
+    expect(released).toBe(false);
+    expect(service.getActiveSession().isActive).toBe(true);
+    expect(mockedAccessibility.dismissVisibleUssdWindow).toHaveBeenCalled();
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD lock not released because popup visible');
+  });
+
+  it('releases a stale USSD lock when no popup is visible', async () => {
+    const service = new UssdSessionLockService();
+    const onRelease = jest.fn();
+    service.setReleaseCallback(onRelease);
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'DIRECT_TRANSFER-STALE',
+      startedAt: Date.now() - 181_000,
+      currentFlow: 'DIRECT_TRANSFER',
+      state: 'DIALING',
+    };
+    mockedAccessibility.isUssdWindowVisible.mockResolvedValue(false);
+
+    const released = await service.releaseIfStaleAndNoWindowVisible('watchdog_ussd_session_stale', 180_000);
+
+    expect(released).toBe(true);
+    expect(service.getActiveSession()).toEqual({isActive: false, state: 'IDLE'});
+    expect(onRelease).toHaveBeenCalled();
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Stale USSD session detected');
+  });
 });

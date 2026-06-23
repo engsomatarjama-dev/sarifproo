@@ -31,6 +31,22 @@ class AutomationQueueService {
     return this.queuedKeys.has(dedupeKey) || automationLockService.getActiveJob()?.dedupeKey === dedupeKey;
   }
 
+  getSnapshot() {
+    const oldest = this.queue.length > 0 ? this.queue[0] : undefined;
+    return {
+      queueLength: this.queue.length,
+      oldestQueuedItemId: oldest?.id,
+      oldestQueuedItemType: oldest?.type,
+      oldestQueuedItemCreatedAt: oldest?.createdAt,
+      oldestQueuedItemAgeMs: oldest ? Date.now() - oldest.createdAt : 0,
+      waitingForSafeUssdRelease: this.waitingForSafeUssdRelease,
+    };
+  }
+
+  triggerRecoveryChecks() {
+    void this.processNext();
+  }
+
   async enqueue(job: Omit<AutomationJob, 'status' | 'createdAt'>) {
     if (this.hasQueuedOrActive(job.dedupeKey)) {
       await loggingService.log('system', 'Duplicate queued job ignored');
@@ -112,6 +128,7 @@ class AutomationQueueService {
       job.status = 'completed';
       job.completedAt = Date.now();
       await job.onDuplicate?.('duplicate_transfer');
+      void this.processNext();
       return;
     }
 
