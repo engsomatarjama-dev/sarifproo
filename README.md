@@ -2,7 +2,7 @@
 
 Static GitHub Pages version of the SarifPro download site.
 
-Current APK: `SarifPro-1.0.28.apk`
+Current APK: `SarifPro-1.0.44.apk`
 
 Notes:
 - This repository intentionally excludes Netlify functions and environment files.
