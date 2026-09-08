@@ -1,23 +1,47 @@
 import {AppSettings} from '../types';
 
+export const parseMoneyToMinorUnits = (value: number | string) => {
+  const raw = typeof value === 'number' ? value.toString() : value.trim();
+  const match = raw.match(/^(\d+)(?:\.(\d+))?$/);
+  if (!match) {
+    return undefined;
+  }
+
+  const whole = Number(match[1]);
+  if (!Number.isSafeInteger(whole)) {
+    return undefined;
+  }
+
+  const decimal = (match[2] ?? '').padEnd(2, '0').slice(0, 2);
+  const cents = Number(decimal || '0');
+  return whole * 100 + cents;
+};
+
 export const normalizeUssdAmount = (amount: number) => {
-  if (!Number.isFinite(amount)) {
+  const minorUnits = parseMoneyToMinorUnits(amount);
+  if (minorUnits === undefined) {
     return '';
   }
-  const normalized = truncateToTwoDecimals(amount);
-  const {wholePart, decimalPart} = splitTransferAmount(normalized);
+  const {wholePart, decimalPart} = splitMinorUnits(minorUnits);
   return decimalPart > 0 ? `${wholePart}*${String(decimalPart).padStart(2, '0')}` : String(wholePart);
 };
 
-export const truncateToTwoDecimals = (value: number): number => Math.floor(value * 100) / 100;
+export const truncateToTwoDecimals = (value: number): number => {
+  const minorUnits = parseMoneyToMinorUnits(value);
+  return minorUnits === undefined ? NaN : minorUnits / 100;
+};
+
+const splitMinorUnits = (minorUnits: number) => ({
+  wholePart: Math.floor(minorUnits / 100),
+  decimalPart: minorUnits % 100,
+});
 
 export const splitTransferAmount = (value: number) => {
-  const normalized = truncateToTwoDecimals(value);
-  const cents = Math.floor(normalized * 100 + 0.000001);
-  return {
-    wholePart: Math.floor(cents / 100),
-    decimalPart: cents % 100,
-  };
+  const minorUnits = parseMoneyToMinorUnits(value);
+  if (minorUnits === undefined) {
+    return {wholePart: 0, decimalPart: 0};
+  }
+  return splitMinorUnits(minorUnits);
 };
 
 export const formatTransferAmountForInput = (value: number) => {
@@ -30,6 +54,7 @@ export const resolveTransferDestination = (settings: AppSettings) => settings.ac
 const ACCOUNT_PATTERN = /^\d{5,15}$/;
 const SHORTCODE_PATTERN = /^\d{2,6}$/;
 const PIN_PATTERN = /^\d{4,8}$/;
+const BANK_PIN_PATTERN = /^\d{6}$/;
 
 export const validateTransferSettings = (settings: AppSettings, amount: number) => {
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -46,6 +71,22 @@ export const validateTransferSettings = (settings: AppSettings, amount: number) 
   }
   if (!PIN_PATTERN.test(settings.pin1)) {
     return 'PIN1 is invalid.';
+  }
+  return undefined;
+};
+
+export const validateBankDepositSettings = (settings: AppSettings, amount: number) => {
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return 'Dara-Salaam amount must be positive.';
+  }
+  if (amount > settings.maxTransferAmount) {
+    return 'Transfer amount exceeds the configured maximum limit.';
+  }
+  if (!settings.pin2) {
+    return 'PIN2 is required for Dara-Salaam Bank automation.';
+  }
+  if (!BANK_PIN_PATTERN.test(settings.bankPin)) {
+    return 'Bank PIN must be exactly 6 digits.';
   }
   return undefined;
 };

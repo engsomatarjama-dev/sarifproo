@@ -6,7 +6,7 @@ import {loggingService} from '../services/LoggingService';
 import {notificationService} from '../services/NotificationService';
 import {subscriptionGuardService} from '../services/SubscriptionGuardService';
 import {useAppStore} from '../store/useAppStore';
-import {truncateToTwoDecimals} from '../utils/ussd';
+import {truncateToTwoDecimals, validateBankDepositSettings, validateTransferSettings} from '../utils/ussd';
 import {automationCoordinator} from '../services/AutomationCoordinator';
 import {dashboardService} from '../services/DashboardService';
 import {transactionRepository} from '../repositories/TransactionRepository';
@@ -180,6 +180,20 @@ class PeriodicBalanceCheckerService {
       const reference = `PBC-${startedAt}`;
       pendingConfirmationReference = reference;
       pendingConfirmationType = settings.transferMethod === 'DARA_SALAAM_BANK' ? 'bank_deposit' : 'direct_transfer';
+      const validationError =
+        settings.transferMethod === 'DARA_SALAAM_BANK'
+          ? validateBankDepositSettings(settings, balanceToTransfer)
+          : validateTransferSettings(settings, balanceToTransfer);
+      if (validationError) {
+        pendingConfirmationReference = undefined;
+        await this.saveCheck(originalBalance, balanceToTransfer, 'completed', startedAt);
+        await loggingService.log('transaction_failed', `Periodic balance transfer rejected before transfer start: ${validationError}`);
+        await notificationService.show('Transfer failed', 'Transfer settings or amount failed validation.');
+        this.refreshDashboardAsync();
+        void loggingService.log('system', 'Balance Cycle Completed');
+        return;
+      }
+
       const duplicateTransfer = await transactionRepository.findRecentTransferDuplicate({
         amount: balanceToTransfer,
         transactionType: pendingConfirmationType,

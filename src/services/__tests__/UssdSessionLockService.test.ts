@@ -123,6 +123,59 @@ describe('UssdSessionLockService', () => {
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD lock not released because popup visible');
   });
 
+  it('keeps an old lock active when popup state is unresolved through isActive', () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'DIRECT_TRANSFER-STALE',
+      startedAt: Date.now() - 600_000,
+      currentFlow: 'DIRECT_TRANSFER',
+      state: 'DIALING',
+    };
+
+    expect(service.isActive()).toBe(true);
+    expect(service.getActiveSession().isActive).toBe(true);
+    expect(mockedLogging.log).not.toHaveBeenCalledWith('system', 'Stale USSD session lock cleared');
+  });
+
+  it('does not let repeated automation triggers bypass an active stale lock', async () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'BANK_DEPOSIT-STALE',
+      startedAt: Date.now() - 600_000,
+      currentFlow: 'BANK_DEPOSIT',
+      state: 'WAITING_SCREEN_VISIBLE',
+    };
+
+    const acquired = await service.acquire('DIRECT_TRANSFER', {wait: false});
+
+    expect(acquired).toBeUndefined();
+    expect(service.getActiveSession()).toMatchObject({
+      isActive: true,
+      sessionId: 'BANK_DEPOSIT-STALE',
+    });
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD lock prevented duplicate session');
+  });
+
+  it('keeps a stale lock active when popup visibility cannot be verified', async () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'DIRECT_TRANSFER-STALE',
+      startedAt: Date.now() - 181_000,
+      currentFlow: 'DIRECT_TRANSFER',
+      state: 'DIALING',
+    };
+    mockedAccessibility.isUssdWindowVisible.mockRejectedValue(new Error('visibility unavailable'));
+
+    const released = await service.releaseIfStaleAndNoWindowVisible('watchdog_ussd_session_stale', 180_000);
+
+    expect(released).toBe(false);
+    expect(service.getActiveSession().isActive).toBe(true);
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD lock not released because popup visible');
+  });
+
   it('releases a stale USSD lock when no popup is visible', async () => {
     const service = new UssdSessionLockService();
     const onRelease = jest.fn();

@@ -23,7 +23,6 @@ export interface ActiveUssdSession {
   settlingStartedAt?: number;
 }
 
-const STALE_SESSION_MS = 3 * 60 * 1000;
 const NETWORK_SETTLING_MS = 30_000;
 const CLEAN_IDLE_MS = 10_000;
 const CLEAN_IDLE_TIMEOUT_MS = 60_000;
@@ -60,7 +59,6 @@ export class UssdSessionLockService {
   }
 
   isActive() {
-    this.clearStaleIfNeeded();
     return this.session.isActive;
   }
 
@@ -360,17 +358,6 @@ export class UssdSessionLockService {
 
   private canMutate(sessionId?: string) {
     return this.session.isActive && (!sessionId || this.session.sessionId === sessionId);
-  }
-
-  private clearStaleIfNeeded() {
-    if (!this.session.isActive || !this.session.startedAt) {
-      return;
-    }
-    if (Date.now() - this.session.startedAt > STALE_SESSION_MS) {
-      this.session = {isActive: false, state: 'IDLE'};
-      this.lastReleaseSafeForImmediateDial = false;
-      void loggingService.log('system', 'Stale USSD session lock cleared');
-    }
   }
 }
 

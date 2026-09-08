@@ -1,7 +1,13 @@
 import {AppSettings, UssdFinalResult} from '../types';
 import {accessibilityNative, ussdNative} from '../native/SarifNative';
 import {delay, retryOperation} from '../utils/retry';
-import {buildAccountTransferUssd, buildPeriodicBalanceTransferUssd, formatTransferAmountForInput, truncateToTwoDecimals} from '../utils/ussd';
+import {
+  buildAccountTransferUssd,
+  buildPeriodicBalanceTransferUssd,
+  formatTransferAmountForInput,
+  truncateToTwoDecimals,
+  validateBankDepositSettings,
+} from '../utils/ussd';
 import {redactLogMessage, redactUssd} from '../utils/redaction';
 import {useAppStore} from '../store/useAppStore';
 import {loggingService} from './LoggingService';
@@ -9,8 +15,6 @@ import {timingLogService} from './TimingLogService';
 import {UssdFlow, ussdSessionLockService} from './UssdSessionLockService';
 
 const DARA_SALAAM_USSD = '*800#';
-const BANK_PIN_PATTERN = /^\d{6}$/;
-
 class UssdAutomationService {
   buildBalanceUssd(settings: AppSettings, amount: number) {
     return buildAccountTransferUssd(settings, amount);
@@ -102,14 +106,9 @@ class UssdAutomationService {
 
   validateDaraSalaamSettings(settings: AppSettings, amount: number) {
     const amountToSend = this.normalizeDaraSalaamAmount(amount);
-    if (amountToSend > settings.maxTransferAmount) {
-      throw new Error('Transfer amount exceeds the configured maximum limit.');
-    }
-    if (!settings.pin2) {
-      throw new Error('PIN2 is required for Dara-Salaam Bank automation.');
-    }
-    if (!BANK_PIN_PATTERN.test(settings.bankPin)) {
-      throw new Error('Bank PIN must be exactly 6 digits.');
+    const validationError = validateBankDepositSettings(settings, amountToSend);
+    if (validationError) {
+      throw new Error(validationError);
     }
     return amountToSend;
   }

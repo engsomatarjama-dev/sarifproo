@@ -31,8 +31,8 @@ android {
         applicationId "com.sarifpro"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 45
-        versionName "1.0.44"
+        versionCode 46
+        versionName "1.0.45"
         resValue "string", "build_config_package", "com.sarifpro"
         buildConfigField "String", "SUPABASE_URL", configString(gradlePropertyOrDefault("SARIFPRO_SUPABASE_URL"))
         buildConfigField "String", "SUPABASE_PUBLISHABLE_KEY", configString(gradlePropertyOrDefault("SARIFPRO_SUPABASE_PUBLISHABLE_KEY"))

@@ -9,49 +9,20 @@ import {exchangeAutomationEngine} from '../automation/ExchangeAutomationEngine';
 import {balanceMonitoringEngine} from '../automation/BalanceMonitoringEngine';
 import {subscriptionGuardService} from './SubscriptionGuardService';
 import {notificationService} from './NotificationService';
-import {normalizeSms} from '../utils/sms';
 import {smsParserService} from './SmsParserService';
 import {periodicBalanceCheckerService} from '../automation/PeriodicBalanceCheckerService';
 import {transactionConfirmationService} from './TransactionConfirmationService';
 import {automationQueueService} from './AutomationQueueService';
 import {truncateToTwoDecimals} from '../utils/ussd';
 import {automationWatchdogService} from './AutomationWatchdogService';
+import {
+  is898Sender,
+  looksLikeBalanceMessage,
+  looksLikeIncomingBalanceTrigger,
+  looksLikeOutgoingTransferConfirmation,
+} from './AutomationSmsPolicy';
 
 type BackgroundTaskData = {delay: number};
-
-const is898Sender = (sender: string) => {
-  const normalized = sender.trim().toLowerCase();
-  const digits = normalized.replace(/[^\d]/g, '');
-  return normalized === '898' || digits === '898' || digits.endsWith('898');
-};
-
-const normalizeBody = (body: string) => normalizeSms(body).toLowerCase();
-
-const looksLikeBalanceMessage = (body: string) => {
-  const normalized = normalizeBody(body);
-  return normalized.includes('hadhaag') || normalized.includes('balance');
-};
-
-const looksLikeIncomingBalanceTrigger = (body: string) => {
-  const normalized = normalizeBody(body);
-  return (
-    normalized.includes('ka heshay') ||
-    normalized.includes('xisaabtaada') ||
-    normalized.includes('hadhaageedu waa') ||
-    normalized.includes('hadhaagaagu waa') ||
-    normalized.includes('hadhaagaaga:')
-  );
-};
-
-const looksLikeOutgoingTransferConfirmation = (body: string) => {
-  const normalized = normalizeBody(body);
-  return (
-    normalized.includes('u dirtay') ||
-    normalized.includes('ayaad u dirtay') ||
-    normalized.includes('u sariftay') ||
-    normalized.includes('you have exchanged')
-  );
-};
 
 const BACKGROUND_OPTIONS: BackgroundTaskOptions & {parameters: BackgroundTaskData} = {
   taskName: 'SarifPro Automation',

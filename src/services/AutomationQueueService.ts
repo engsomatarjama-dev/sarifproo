@@ -3,6 +3,7 @@ import {loggingService} from './LoggingService';
 import {isSmsAutomationJob, isUssdAutomationJob, shouldSkipJobWhenBusy} from './AutomationQueuePolicy';
 import {duplicateTransferGuardService} from './DuplicateTransferGuardService';
 import {ussdSessionLockService} from './UssdSessionLockService';
+import {redactReference} from '../utils/redaction';
 
 type AutomationJob = AutomationJobDescriptor & {
   status: 'queued' | 'running' | 'completed' | 'failed';
@@ -143,6 +144,14 @@ class AutomationQueueService {
     job.status = 'running';
     job.startedAt = Date.now();
     await loggingService.log('system', 'Queued job started');
+    await loggingService.log(
+      'system',
+      `Automation job diagnostic: type=${job.type} source=${job.source} reference=${
+        job.reference ? redactReference(job.reference) : 'none'
+      } queueLength=${this.queue.length} automationLock=${automationLockService.getState()} ussdLock=${
+        ussdSessionLockService.getActiveSession().isActive ? 'active' : 'idle'
+      }`,
+    );
 
     try {
       await job.run();
@@ -153,6 +162,10 @@ class AutomationQueueService {
       job.completedAt = Date.now();
       await loggingService.log('transaction_failed', `Automation job failed: ${error instanceof Error ? error.message : String(error)}`);
     } finally {
+      await loggingService.log(
+        'system',
+        `Automation job finished: type=${job.type} source=${job.source} status=${job.status} queueLength=${this.queue.length}`,
+      );
       if (!automationLockService.isExternalRelease(job.id)) {
         await automationLockService.release(job.id);
       }

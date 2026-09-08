@@ -9,6 +9,7 @@ import {dashboardService} from '../services/DashboardService';
 import {notificationService} from '../services/NotificationService';
 import {makeDeterministicHash} from '../utils/sms';
 import {truncateToTwoDecimals} from '../utils/ussd';
+import {validateBankDepositSettings, validateTransferSettings} from '../utils/ussd';
 import {transactionConfirmationService} from '../services/TransactionConfirmationService';
 import {buildTransferDedupeKey} from '../services/DuplicateTransferPolicy';
 
@@ -46,6 +47,17 @@ class BalanceMonitoringEngine {
 
     const reference = `BAL-${payload.timestamp}`;
     const transactionType = settings.transferMethod === 'DARA_SALAAM_BANK' ? 'bank_deposit' : 'direct_transfer';
+    const validationError =
+      settings.transferMethod === 'DARA_SALAAM_BANK'
+        ? validateBankDepositSettings(settings, normalizedAmount)
+        : validateTransferSettings(settings, normalizedAmount);
+    if (validationError) {
+      await loggingService.log('transaction_failed', `898 balance automation rejected before transfer start: ${validationError}`);
+      await notificationService.show('Transfer failed', 'Transfer settings or amount failed validation.');
+      await dashboardService.refresh();
+      return {handled: true, reason: validationError};
+    }
+
     const duplicateTransfer = await transactionRepository.findRecentTransferDuplicate({
       amount: normalizedAmount,
       transactionType,

@@ -11,6 +11,7 @@ import {makeDeterministicHash} from '../utils/sms';
 import {redactReference} from '../utils/redaction';
 import {transactionConfirmationService} from '../services/TransactionConfirmationService';
 import {buildTransferDedupeKey} from '../services/DuplicateTransferPolicy';
+import {truncateToTwoDecimals, validateBankDepositSettings, validateTransferSettings} from '../utils/ussd';
 
 class ExchangeAutomationEngine {
   async process(payload: SmsPayload) {
@@ -28,8 +29,20 @@ class ExchangeAutomationEngine {
 
     const transferDestination = settings.accountNumber;
     const transactionType = settings.transferMethod === 'DARA_SALAAM_BANK' ? 'bank_deposit' : 'direct_transfer';
+    const normalizedAmount = truncateToTwoDecimals(parsed.amount);
+    const validationError =
+      settings.transferMethod === 'DARA_SALAAM_BANK'
+        ? validateBankDepositSettings(settings, normalizedAmount)
+        : validateTransferSettings(settings, normalizedAmount);
+    if (validationError) {
+      await loggingService.log('transaction_failed', `Exchange automation rejected before transfer start: ${validationError}`);
+      await notificationService.show('Transfer failed', 'Transfer settings or amount failed validation.');
+      await dashboardService.refresh();
+      return {handled: false, reason: validationError};
+    }
+
     const duplicateTransfer = await transactionRepository.findRecentTransferDuplicate({
-      amount: parsed.amount,
+      amount: normalizedAmount,
       transactionType,
       destinationAccount: transferDestination,
       reference: parsed.reference,
@@ -48,7 +61,7 @@ class ExchangeAutomationEngine {
     const transaction: Transaction = {
       type: 'sms_exchange',
       transactionType,
-      amount: parsed.amount,
+      amount: normalizedAmount,
       phone: parsed.phone,
       reference: parsed.reference,
       status: 'pending',
@@ -57,7 +70,7 @@ class ExchangeAutomationEngine {
       source: 'sms',
       sourceReference: parsed.reference,
       dedupeKey: buildTransferDedupeKey({
-        amount: parsed.amount,
+        amount: normalizedAmount,
         transferMethod: settings.transferMethod,
         destinationAccount: transferDestination,
         timestamp: payload.timestamp,
@@ -80,7 +93,7 @@ class ExchangeAutomationEngine {
       return {handled: false, reason: 'Missing account, shortcode, or PIN1'};
     }
 
-    const originalUsdAmount = parsed.amount;
+    const originalUsdAmount = normalizedAmount;
 
     try {
       if (settings.transferMethod === 'DARA_SALAAM_BANK') {

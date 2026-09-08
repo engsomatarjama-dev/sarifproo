@@ -1,4 +1,5 @@
 import {AppSettings} from '../types';
+import {redactReference} from '../utils/redaction';
 import {loggingService} from './LoggingService';
 import {ussdAutomationService} from './UssdAutomationService';
 
@@ -40,7 +41,9 @@ class AutomationCoordinator {
   private async logRequest(type: string, context: AutomationRequestContext) {
     await loggingService.log(
       'system',
-      `AutomationCoordinator accepted ${type} request from ${context.source}${context.reference ? ` reference ${context.reference}` : ''}`,
+      `AutomationCoordinator accepted ${type} request from ${context.source}${
+        context.reference ? ` reference ${redactReference(context.reference)}` : ''
+      }`,
     );
   }
 }
