@@ -31,6 +31,24 @@ const firstMatch = (message: string, patterns: RegExp[]) => {
 
 const toAmount = (value?: string) => (value ? Number(value.replace(/,/g, '')) : undefined);
 
+const extractObservedAvailableBalance = (message: string, errorCode?: string) => {
+  if (errorCode !== 'insufficient_balance') {
+    return undefined;
+  }
+
+  const patterns = [
+    /(?:hadhaagaag[au]?|hadhagaag[au]?|hadhaageedu)\s*(?:waa|[:=])\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+    /available\s+balance\s*(?:is|[:=])\s*\$?\s*([\d,]+(?:\.\d+)?)/i,
+  ];
+  for (const pattern of patterns) {
+    const value = toAmount(firstMatch(message, [pattern]));
+    if (value !== undefined && Number.isFinite(value)) {
+      return value;
+    }
+  }
+  return undefined;
+};
+
 const stripTransferBalanceFragments = (message: string) =>
   message
     .replace(/Hadhaagaag(?:a|u)?(?:\s+waa)?\s*[:=]?\s*\$?\s*[\d,.]+\.?/gi, '')
@@ -65,6 +83,7 @@ class UssdResultParserService {
       transactionType,
       message: storedMessage,
       errorCode: terminalError?.code,
+      observedAvailableBalance: extractObservedAvailableBalance(message, terminalError?.code),
       amount: toAmount(firstMatch(message, [/\$\s*([\d,.]+)/])),
       receiverName: firstMatch(message, [/u\s+dirtay\s+(.+?)\(\d{7,15}\)/i]),
       receiverPhone: firstMatch(message, [/\((\d{7,15})\)/]),

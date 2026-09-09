@@ -66,6 +66,7 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
             .putString("final_result_message", "")
             .putString("final_result_failure_reason", "")
             .putString("final_result_error_code", "")
+            .putString("final_result_observed_available_balance", "")
             .putString("final_result_amount", "")
             .putString("final_result_receiver_name", "")
             .putString("final_result_receiver_phone", "")
@@ -95,6 +96,7 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
             .putString("final_result_message", "")
             .putString("final_result_failure_reason", "")
             .putString("final_result_error_code", "")
+            .putString("final_result_observed_available_balance", "")
             .putString("final_result_amount", "")
             .putString("final_result_receiver_name", "")
             .putString("final_result_receiver_phone", "")
@@ -126,6 +128,7 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
             .putString("final_result_message", "")
             .putString("final_result_failure_reason", "")
             .putString("final_result_error_code", "")
+            .putString("final_result_observed_available_balance", "")
             .putString("final_result_amount", "")
             .putString("final_result_receiver_name", "")
             .putString("final_result_receiver_phone", "")
@@ -155,6 +158,7 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
             .putString("final_result_message", "")
             .putString("final_result_failure_reason", "")
             .putString("final_result_error_code", "")
+            .putString("final_result_observed_available_balance", "")
             .putString("balance_result", "")
             .putString("balance_result_message", "")
             .putLong("armed_until", 0L)
@@ -209,6 +213,10 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
         map.putString("message", prefs.getString("final_result_message", "").orEmpty())
         map.putString("failureReason", prefs.getString("final_result_failure_reason", "").orEmpty())
         map.putString("errorCode", prefs.getString("final_result_error_code", "").orEmpty())
+        map.putDouble(
+            "observedAvailableBalance",
+            prefs.getString("final_result_observed_available_balance", "")?.toDoubleOrNull() ?: 0.0
+        )
         map.putDouble("amount", prefs.getString("final_result_amount", "")?.toDoubleOrNull() ?: 0.0)
         map.putString("receiverName", prefs.getString("final_result_receiver_name", "").orEmpty())
         map.putString("receiverPhone", prefs.getString("final_result_receiver_phone", "").orEmpty())

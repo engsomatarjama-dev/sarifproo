@@ -671,6 +671,23 @@ class SarifAccessibilityService : AccessibilityService() {
             .orEmpty()
     }
 
+    private fun extractObservedAvailableBalance(text: String, errorCode: String): String {
+        if (errorCode != "insufficient_balance") {
+            return ""
+        }
+        val patterns = listOf(
+            Regex("""(?:hadhaagaag[au]?|hadhagaag[au]?|hadhaageedu)\s*(?:waa|[:=])\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)""", RegexOption.IGNORE_CASE),
+            Regex("""available\s+balance\s*(?:is|[:=])\s*\$?\s*([0-9,]+(?:\.[0-9]+)?)""", RegexOption.IGNORE_CASE)
+        )
+        for (pattern in patterns) {
+            val match = pattern.find(text)
+            if (match != null) {
+                return match.groupValues[1].replace(",", "")
+            }
+        }
+        return ""
+    }
+
     private fun stripTransferBalanceFragments(text: String): String {
         return text
             .replace(
@@ -713,6 +730,7 @@ class SarifAccessibilityService : AccessibilityService() {
             .putString("final_result_message", storedMessage)
             .putString("final_result_failure_reason", failureReason)
             .putString("final_result_error_code", errorCode)
+            .putString("final_result_observed_available_balance", extractObservedAvailableBalance(message, errorCode))
             .putString("final_result_amount", extractFirstAmount(message))
             .putString("final_result_receiver_name", extractReceiverName(message))
             .putString("final_result_receiver_phone", extractReceiverPhone(message))

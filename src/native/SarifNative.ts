@@ -25,6 +25,7 @@ type AccessibilityNativeModule = {
     UssdFinalResult & {
       state: string;
       classification?: UssdFinalResult['classification'];
+      observedAvailableBalance?: number;
     }
   >;
   isAutomationActive: () => Promise<boolean>;

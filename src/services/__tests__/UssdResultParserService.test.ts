@@ -112,6 +112,22 @@ describe('UssdResultParserService', () => {
     expect(result.errorCode).toBe('invalid_mmi');
   });
 
+  it('extracts observed available balance only from insufficient-balance terminal errors', () => {
+    const result = ussdResultParserService.parse('Hadhaagaagu kuguma filna. Hadhagaagu waa 5.');
+
+    expect(result.status).toBe('failed');
+    expect(result.errorCode).toBe('insufficient_balance');
+    expect(result.observedAvailableBalance).toBe(5);
+  });
+
+  it('does not invent observed available balance from malformed insufficient-balance text', () => {
+    const result = ussdResultParserService.parse('Hadhaagaagu kuguma filna. Fadlan isku day mar kale.');
+
+    expect(result.status).toBe('failed');
+    expect(result.errorCode).toBe('insufficient_balance');
+    expect(result.observedAvailableBalance).toBeUndefined();
+  });
+
   it('treats unexpected final USSD screens as unknown results', () => {
     const result = ussdResultParserService.parse('<-ADEEGA SARIFKA-> Fariin aan la garanayn. OK');
 

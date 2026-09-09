@@ -120,6 +120,7 @@ export interface UssdFinalResult {
   bankAccount?: string;
   failureReason?: string;
   errorCode?: string;
+  observedAvailableBalance?: number;
   dismissed: boolean;
   timestamp: number;
 }

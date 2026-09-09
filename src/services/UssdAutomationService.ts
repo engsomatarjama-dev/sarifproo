@@ -305,6 +305,7 @@ class UssdAutomationService {
       transactionType: result.transactionType || 'unknown',
       message: result.message ?? '',
       errorCode: result.errorCode || undefined,
+      observedAvailableBalance: result.observedAvailableBalance || undefined,
       amount: result.amount || undefined,
       receiverName: result.receiverName || undefined,
       receiverPhone: result.receiverPhone || undefined,

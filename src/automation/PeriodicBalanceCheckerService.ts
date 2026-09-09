@@ -26,6 +26,8 @@ class PeriodicBalanceCheckerService {
   private lastCompletedAt?: number;
   private nextScheduledAt?: number;
   private lastError?: string;
+  private lastObservedAvailableBalance?: number;
+  private freshCheckRequestedAfterInsufficientBalance = false;
 
   getNextScheduledTimestamp() {
     const settings = useAppStore.getState().settings;
@@ -48,6 +50,9 @@ class PeriodicBalanceCheckerService {
       lastCompletedAt: this.lastCompletedAt,
       nextScheduledAt: this.nextScheduledAt ?? this.getNextScheduledTimestamp(),
       lastError: this.lastError,
+      ...(this.lastObservedAvailableBalance !== undefined
+        ? {lastObservedAvailableBalance: this.lastObservedAvailableBalance}
+        : {}),
     };
   }
 
@@ -257,6 +262,7 @@ class PeriodicBalanceCheckerService {
       }
 
       await transactionConfirmationService.startAwaitingConfirmation(reference, result);
+      await this.handleInsufficientBalanceRecovery(result);
       duplicateGuardService.rememberPeriodicBalanceTransfer(balanceToTransfer);
       void loggingService.log('system', 'Periodic balance transfer awaiting confirmation');
       void notificationService.show('Awaiting confirmation', 'Waiting for 898 SMS confirmation.');
@@ -284,8 +290,26 @@ class PeriodicBalanceCheckerService {
       this.currentCycleId = undefined;
       this.currentCycleStartedAt = undefined;
       void loggingService.log('system', 'Automation Returned To Idle');
-      this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
+      const nextDelayMs = this.freshCheckRequestedAfterInsufficientBalance ? 0 : failedCycle ? 30_000 : 0;
+      this.freshCheckRequestedAfterInsufficientBalance = false;
+      this.scheduleContinuousCycle(nextDelayMs);
     }
+  }
+
+  private async handleInsufficientBalanceRecovery(result: UssdFinalResult) {
+    if (result.errorCode !== 'insufficient_balance') {
+      return;
+    }
+
+    const observed = result.observedAvailableBalance;
+    if (observed !== undefined && Number.isFinite(observed)) {
+      this.lastObservedAvailableBalance = observed;
+      useAppStore.getState().setLastDetectedBalance(observed);
+      await loggingService.log('balance_detected', `Observed available balance after insufficient-balance failure: ${observed}`);
+    }
+
+    this.freshCheckRequestedAfterInsufficientBalance = true;
+    await loggingService.log('system', 'Fresh balance check scheduled after insufficient-balance terminal result');
   }
 
   private scheduleContinuousCycle(delayMs: number) {
