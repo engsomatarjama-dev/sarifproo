@@ -346,10 +346,14 @@ export class UssdSessionLockService {
   }
 
   private async releaseSession(safeForImmediateDial: boolean) {
+    const releasedState = this.session.state;
     this.session = {isActive: false, state: 'IDLE'};
     this.lastReleaseSafeForImmediateDial = safeForImmediateDial;
     if (safeForImmediateDial) {
       await loggingService.log('system', 'Session lock released immediately');
+    }
+    if (releasedState === 'FAILED') {
+      await loggingService.log('system', 'USSD_SESSION_RELEASED_AFTER_ERROR');
     }
     timingLogService.log('system', `session_lock_released_at=${Date.now()}`);
     await loggingService.log('system', 'USSD session released');

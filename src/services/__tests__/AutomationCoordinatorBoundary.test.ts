@@ -22,6 +22,7 @@ describe('AutomationCoordinator boundary', () => {
       path.normalize(path.join(srcRoot, 'services/AutomationCoordinator.ts')),
       path.normalize(path.join(srcRoot, 'services/UssdAutomationService.ts')),
       path.normalize(path.join(srcRoot, 'services/__tests__/AutomationCoordinatorBoundary.test.ts')),
+      path.normalize(path.join(srcRoot, 'services/__tests__/UssdAutomationService.test.ts')),
     ]);
     const offenders = collectSourceFiles(srcRoot).filter(file => {
       if (allowed.has(path.normalize(file))) {

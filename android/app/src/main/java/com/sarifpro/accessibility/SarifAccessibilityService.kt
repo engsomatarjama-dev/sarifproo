@@ -69,6 +69,9 @@ class SarifAccessibilityService : AccessibilityService() {
             return
         }
         lastScreenProcessedAt = System.currentTimeMillis()
+        if (tryHandleActiveNetworkMmiError(source)) {
+            return
+        }
         if (automationMode() != MODE_BALANCE_CHECK && finalResultState() == WAITING_FINAL_RESULT) {
             tryHandleFinalResult(source)
             return
@@ -519,6 +522,54 @@ class SarifAccessibilityService : AccessibilityService() {
         return matchesAny(text, ERROR_PATTERNS)
     }
 
+    private fun tryHandleActiveNetworkMmiError(source: String): Boolean {
+        val roots = buildCandidateRoots(windows.orEmpty(), null, rootInActiveWindow)
+        if (roots.isEmpty()) {
+            return false
+        }
+
+        val errorRoots = roots.filter { root ->
+            looksLikeNetworkMmiError(normalizeFinalResultText(collectReadableText(root)))
+        }
+        if (errorRoots.isEmpty()) {
+            return false
+        }
+
+        val screenText = errorRoots.joinToString(" ") { collectReadableText(it) }.trim()
+        val normalized = normalizeFinalResultText(screenText)
+        if (!hasDismissButton(errorRoots)) {
+            return false
+        }
+
+        val mode = automationMode()
+        val transactionType = when (mode) {
+            MODE_BALANCE_CHECK -> "balance_check"
+            MODE_DARA -> "bank_deposit"
+            MODE_DIRECT -> "direct_transfer"
+            else -> "unknown"
+        }
+        infoLog("USSD_MMI_ERROR_DETECTED source=$source mode=$mode")
+        val recovered = recoverFromUssdFailure(
+            errorRoots,
+            screenText,
+            transactionType,
+            failureReasonForUnexpected(normalized)
+        )
+        if (recovered) {
+            when (mode) {
+                MODE_BALANCE_CHECK -> setBalanceState(BALANCE_FAILED)
+                MODE_DARA -> setDaraState(DARA_FAILED)
+                MODE_DIRECT -> setDirectState(DIRECT_TRANSFER_FAILED)
+            }
+            infoLog("USSD_ERROR_DIALOG_DISMISSED mode=$mode")
+        }
+        return recovered
+    }
+
+    private fun looksLikeNetworkMmiError(text: String): Boolean {
+        return Regex("""connection\s+problem\s+or\s+invalid\s+mmi\s+code|invalid\s+mmi(?:\s+code)?|mmi\s+code|network\s+error|connection\s+problem""").containsMatchIn(text)
+    }
+
     private fun looksLikeUnexpectedFinalShell(text: String, roots: List<AccessibilityNodeInfo>): Boolean {
         return hasDismissButton(roots) &&
             isLikelyUssdResultShell(text) &&
@@ -876,6 +927,10 @@ class SarifAccessibilityService : AccessibilityService() {
         if (BuildConfig.DEBUG) {
             Log.d(TAG, message)
         }
+    }
+
+    private fun infoLog(message: String) {
+        Log.i(TAG, message)
     }
 
     private fun filterRelevantRoots(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {

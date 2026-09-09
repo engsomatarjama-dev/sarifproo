@@ -77,6 +77,11 @@ class UssdAutomationService {
         const result = await this.readFinalResult();
         if (result.dismissed && result.status) {
           ussdSessionLockService.markResponseReceived('failed');
+          if (this.isNetworkMmiError(result)) {
+            await this.logTerminalUssdError(result);
+            await loggingService.log('system', 'USSD_ERROR_DIALOG_DISMISSED');
+            throw new Error('Balance check terminal MMI/network error.');
+          }
         }
         throw new Error('Balance check automation failed.');
       }
@@ -295,6 +300,18 @@ class UssdAutomationService {
     if (text.includes('invalid mmi') || text.includes('mmi code')) {
       await loggingService.log('transaction_failed', 'Invalid MMI code detected');
     }
+    if (this.isNetworkMmiError(result)) {
+      await loggingService.log('transaction_failed', 'USSD_MMI_ERROR_DETECTED');
+    }
+  }
+
+  private isNetworkMmiError(result: UssdFinalResult) {
+    const code = result.errorCode;
+    if (code === 'invalid_mmi' || code === 'network_error' || code === 'connection_problem') {
+      return true;
+    }
+    const text = `${result.failureReason || ''} ${result.message || ''}`.toLowerCase();
+    return text.includes('invalid mmi') || text.includes('mmi code') || text.includes('connection problem') || text.includes('network error');
   }
 
   private async readFinalResult(): Promise<UssdFinalResult> {

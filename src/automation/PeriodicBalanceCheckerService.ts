@@ -136,6 +136,7 @@ class PeriodicBalanceCheckerService {
     this.lastStartedAt = startedAt;
     this.lastError = undefined;
     let failedCycle = false;
+    let failedCycleRetryDelayMs = 30_000;
     let pendingConfirmationReference: string | undefined;
     let pendingConfirmationType: 'direct_transfer' | 'bank_deposit' = 'direct_transfer';
     try {
@@ -271,6 +272,10 @@ class PeriodicBalanceCheckerService {
     } catch (error) {
       failedCycle = true;
       this.lastError = error instanceof Error ? error.message : String(error);
+      if (this.isRecoverableBalanceCheckNetworkError(this.lastError)) {
+        failedCycleRetryDelayMs = 10_000;
+        await loggingService.log('system', 'BALANCE_CHECK_RETRY_SCHEDULED');
+      }
       if (pendingConfirmationReference) {
         await transactionRepository.updateResult(pendingConfirmationReference, {
           status: 'failed',
@@ -290,10 +295,21 @@ class PeriodicBalanceCheckerService {
       this.currentCycleId = undefined;
       this.currentCycleStartedAt = undefined;
       void loggingService.log('system', 'Automation Returned To Idle');
-      const nextDelayMs = this.freshCheckRequestedAfterInsufficientBalance ? 0 : failedCycle ? 30_000 : 0;
+      const nextDelayMs = this.freshCheckRequestedAfterInsufficientBalance ? 0 : failedCycle ? failedCycleRetryDelayMs : 0;
       this.freshCheckRequestedAfterInsufficientBalance = false;
       this.scheduleContinuousCycle(nextDelayMs);
     }
+  }
+
+  private isRecoverableBalanceCheckNetworkError(message: string) {
+    const normalized = message.toLowerCase();
+    return (
+      normalized.includes('terminal mmi/network error') ||
+      normalized.includes('invalid mmi') ||
+      normalized.includes('mmi code') ||
+      normalized.includes('connection problem') ||
+      normalized.includes('network error')
+    );
   }
 
   private async handleInsufficientBalanceRecovery(result: UssdFinalResult) {

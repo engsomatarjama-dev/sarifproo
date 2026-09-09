@@ -50,6 +50,29 @@ describe('UssdSessionLockService', () => {
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Session lock released immediately');
   });
 
+  it('releases a failed MMI/network terminal session only after the popup disappears', async () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'BALANCE_CHECK-MMI',
+      startedAt: Date.now(),
+      currentFlow: 'BALANCE_CHECK',
+      state: 'FAILED',
+    };
+    mockedAccessibility.isUssdWindowVisible
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+    mockedAccessibility.dismissVisibleUssdWindow.mockResolvedValue(true);
+
+    await service.release('BALANCE_CHECK-MMI');
+
+    expect(mockedAccessibility.dismissVisibleUssdWindow).toHaveBeenCalledTimes(1);
+    expect(service.getActiveSession()).toEqual({isActive: false, state: 'IDLE'});
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD_SESSION_RELEASED_AFTER_ERROR');
+    expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD session released');
+  });
+
   it('skips the pre-dial clean-idle wait after a safe release when no USSD window is visible', async () => {
     const service = new UssdSessionLockService();
     (service as unknown as {lastReleaseSafeForImmediateDial: boolean}).lastReleaseSafeForImmediateDial = true;

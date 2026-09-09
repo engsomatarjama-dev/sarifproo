@@ -194,4 +194,38 @@ describe('PeriodicBalanceCheckerService insufficient-balance recovery', () => {
     expect(automationCoordinator.executeDirectTransfer).toHaveBeenCalledTimes(1);
     expect(transactionRepository.create).toHaveBeenCalledTimes(1);
   });
+
+  it('schedules a short retry after a balance-check MMI/network terminal error without starting a transfer', async () => {
+    (automationCoordinator.executeBalanceInquiry as jest.Mock).mockRejectedValue(
+      new Error('Balance check terminal MMI/network error.') as never,
+    );
+
+    await periodicBalanceCheckerService.run();
+
+    expect(transactionRepository.create).not.toHaveBeenCalled();
+    expect(automationCoordinator.executeDirectTransfer).not.toHaveBeenCalled();
+    expect(automationCoordinator.executeBankDeposit).not.toHaveBeenCalled();
+    expect(balanceCheckRepository.create).toHaveBeenCalledWith(expect.objectContaining({
+      balance: 0,
+      transferAmount: 0,
+      status: 'failed',
+      source: 'periodic_balance_checker',
+    }));
+    expect(loggingService.log).toHaveBeenCalledWith('system', 'BALANCE_CHECK_RETRY_SCHEDULED');
+    expect(periodicBalanceCheckerService.getSnapshot().nextScheduledAt).toBe(1_790_000_010_000);
+  });
+
+  it('does not create concurrent sessions or transfers when repeated MMI errors schedule retries', async () => {
+    (automationCoordinator.executeBalanceInquiry as jest.Mock).mockRejectedValue(
+      new Error('Connection problem or invalid MMI code.') as never,
+    );
+
+    await periodicBalanceCheckerService.run();
+    await periodicBalanceCheckerService.run();
+
+    expect(transactionRepository.create).not.toHaveBeenCalled();
+    expect(automationCoordinator.executeDirectTransfer).not.toHaveBeenCalled();
+    expect(automationCoordinator.executeBankDeposit).not.toHaveBeenCalled();
+    expect(loggingService.log).toHaveBeenCalledWith('system', 'BALANCE_CHECK_RETRY_SCHEDULED');
+  });
 });

@@ -112,7 +112,7 @@ export interface ConfirmationParseResult {
 export interface UssdFinalResult {
   classification?: 'DIRECT_TRANSFER_SUCCESS' | 'BANK_DEPOSIT_SUCCESS' | 'FAILED_RESULT' | 'UNKNOWN_RESULT';
   status: 'completed' | 'failed' | 'unknown_result';
-  transactionType: 'direct_transfer' | 'bank_deposit' | 'unknown';
+  transactionType: 'balance_check' | 'direct_transfer' | 'bank_deposit' | 'unknown';
   message: string;
   amount?: number;
   receiverName?: string;
