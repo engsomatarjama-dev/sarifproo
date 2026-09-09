@@ -98,14 +98,16 @@ export class UssdSessionLockService {
       return undefined;
     }
 
-    const sessionId = `${flow}-${Date.now()}`;
+    const startedAt = Date.now();
+    const sessionId = `${flow}-${startedAt}`;
     this.session = {
       isActive: true,
       sessionId,
-      startedAt: Date.now(),
+      startedAt,
       currentFlow: flow,
       state: 'DIALING',
     };
+    await accessibilityNative.registerActiveUssdSession(sessionId, flow, startedAt);
     await loggingService.log('system', 'USSD session started');
     return sessionId;
   }
@@ -347,8 +349,16 @@ export class UssdSessionLockService {
 
   private async releaseSession(safeForImmediateDial: boolean) {
     const releasedState = this.session.state;
+    const releasedSessionId = this.session.sessionId;
     this.session = {isActive: false, state: 'IDLE'};
     this.lastReleaseSafeForImmediateDial = safeForImmediateDial;
+    if (releasedSessionId) {
+      try {
+        await accessibilityNative.clearActiveUssdSession(releasedSessionId);
+      } catch {
+        await loggingService.log('system', 'Native USSD session ownership clear failed');
+      }
+    }
     if (safeForImmediateDial) {
       await loggingService.log('system', 'Session lock released immediately');
     }

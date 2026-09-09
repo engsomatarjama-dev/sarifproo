@@ -51,6 +51,35 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
     }
 
     @ReactMethod
+    fun registerActiveUssdSession(sessionId: String, flow: String, startedAt: Double, promise: Promise) {
+        reactContext
+            .getSharedPreferences("sarifpro_accessibility", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("active_ussd_session_owned", true)
+            .putString("active_ussd_session_id", sessionId)
+            .putString("active_ussd_session_flow", flow)
+            .putLong("active_ussd_session_started_at", startedAt.toLong())
+            .apply()
+        SarifAccessibilityService.notifyAutomationArmed()
+        promise.resolve(null)
+    }
+
+    @ReactMethod
+    fun clearActiveUssdSession(sessionId: String, promise: Promise) {
+        val prefs = reactContext.getSharedPreferences("sarifpro_accessibility", Context.MODE_PRIVATE)
+        val currentSessionId = prefs.getString("active_ussd_session_id", "").orEmpty()
+        if (currentSessionId == sessionId) {
+            prefs.edit()
+                .putBoolean("active_ussd_session_owned", false)
+                .putString("active_ussd_session_id", "")
+                .putString("active_ussd_session_flow", "")
+                .putLong("active_ussd_session_started_at", 0L)
+                .apply()
+        }
+        promise.resolve(null)
+    }
+
+    @ReactMethod
     fun armPinAutomation(durationMs: Double?, promise: Promise) {
         val now = System.currentTimeMillis()
         val safeDuration = durationMs?.toLong()?.coerceIn(3_000L, 60_000L) ?: 20_000L
@@ -161,6 +190,10 @@ class SarifAccessibilityModule(private val reactContext: ReactApplicationContext
             .putString("final_result_observed_available_balance", "")
             .putString("balance_result", "")
             .putString("balance_result_message", "")
+            .putBoolean("active_ussd_session_owned", false)
+            .putString("active_ussd_session_id", "")
+            .putString("active_ussd_session_flow", "")
+            .putLong("active_ussd_session_started_at", 0L)
             .putLong("armed_until", 0L)
             .apply()
         promise.resolve(null)

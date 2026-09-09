@@ -8,6 +8,8 @@ jest.mock('../../native/SarifNative', () => ({
     isAutomationActive: jest.fn(),
     isUssdWindowVisible: jest.fn(),
     dismissVisibleUssdWindow: jest.fn(),
+    registerActiveUssdSession: jest.fn(),
+    clearActiveUssdSession: jest.fn(),
   },
 }));
 
@@ -26,6 +28,8 @@ describe('UssdSessionLockService', () => {
     mockedAccessibility.isAutomationActive.mockResolvedValue(false);
     mockedAccessibility.isUssdWindowVisible.mockResolvedValue(false);
     mockedAccessibility.dismissVisibleUssdWindow.mockResolvedValue(false);
+    mockedAccessibility.registerActiveUssdSession.mockResolvedValue(undefined);
+    mockedAccessibility.clearActiveUssdSession.mockResolvedValue(undefined);
     mockedLogging.log.mockResolvedValue(undefined);
   });
 
@@ -82,6 +86,36 @@ describe('UssdSessionLockService', () => {
     expect(sessionId).toContain('BALANCE_CHECK-');
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'Pre-dial clean idle wait skipped');
     expect(mockedLogging.log).toHaveBeenCalledWith('system', 'USSD session started');
+    expect(mockedAccessibility.registerActiveUssdSession).toHaveBeenCalledWith(
+      sessionId,
+      'BALANCE_CHECK',
+      expect.any(Number),
+    );
+  });
+
+  it('clears native ownership only for the released session id', async () => {
+    const service = new UssdSessionLockService();
+    (service as unknown as {session: unknown}).session = {
+      isActive: true,
+      sessionId: 'DIRECT_TRANSFER-A',
+      startedAt: Date.now(),
+      currentFlow: 'DIRECT_TRANSFER',
+      state: 'SUCCESS',
+    };
+    mockedAccessibility.isUssdWindowVisible.mockResolvedValue(false);
+
+    await service.release('DIRECT_TRANSFER-B');
+
+    expect(service.getActiveSession()).toMatchObject({
+      isActive: true,
+      sessionId: 'DIRECT_TRANSFER-A',
+    });
+    expect(mockedAccessibility.clearActiveUssdSession).not.toHaveBeenCalled();
+
+    await service.release('DIRECT_TRANSFER-A');
+
+    expect(mockedAccessibility.clearActiveUssdSession).toHaveBeenCalledWith('DIRECT_TRANSFER-A');
+    expect(service.getActiveSession()).toEqual({isActive: false, state: 'IDLE'});
   });
 
   it('uses network settling when a session is not in a terminal state', async () => {

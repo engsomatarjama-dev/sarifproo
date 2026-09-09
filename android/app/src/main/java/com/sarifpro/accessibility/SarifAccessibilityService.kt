@@ -18,7 +18,7 @@ class SarifAccessibilityService : AccessibilityService() {
     private val scanRunnable = object : Runnable {
         override fun run() {
             tryHandleAutomation("poll")
-            mainHandler.postDelayed(this, if (isAutomationArmed()) pollIntervalMs() else 1000)
+            mainHandler.postDelayed(this, if (isAutomationArmed() || hasActiveOwnedUssdSession()) pollIntervalMs() else 1000)
         }
     }
     private var lastAutomationAt: Long = 0L
@@ -38,10 +38,12 @@ class SarifAccessibilityService : AccessibilityService() {
 
         val packageName = event.packageName?.toString().orEmpty()
         lastAccessibilityEventAt = System.currentTimeMillis()
+        val armed = isAutomationArmed()
+        val ownedSession = hasActiveOwnedUssdSession()
         if (packageName.contains("phone", ignoreCase = true) || packageName.contains("dialer", ignoreCase = true)) {
-            debugLog("Accessibility event=${eventTypeName(event.eventType)} package=$packageName armed=${isAutomationArmed()} mode=${automationMode()}")
+            debugLog("Accessibility event=${eventTypeName(event.eventType)} package=$packageName armed=$armed ownedSession=$ownedSession mode=${automationMode()} ownedFlow=${activeOwnedUssdFlow()}")
         }
-        if (isAutomationArmed()) {
+        if (armed || ownedSession) {
             ensurePolling()
             tryHandleAutomation("event:${eventTypeName(event.eventType)}")
         }
@@ -65,11 +67,16 @@ class SarifAccessibilityService : AccessibilityService() {
     }
 
     private fun tryHandleAutomation(source: String) {
-        if (!isAutomationArmed()) {
+        val armed = isAutomationArmed()
+        val ownedSession = hasActiveOwnedUssdSession()
+        if (!armed && !ownedSession) {
             return
         }
         lastScreenProcessedAt = System.currentTimeMillis()
         if (tryHandleActiveNetworkMmiError(source)) {
+            return
+        }
+        if (!armed) {
             return
         }
         if (automationMode() != MODE_BALANCE_CHECK && finalResultState() == WAITING_FINAL_RESULT) {
@@ -523,7 +530,7 @@ class SarifAccessibilityService : AccessibilityService() {
     }
 
     private fun tryHandleActiveNetworkMmiError(source: String): Boolean {
-        val roots = buildCandidateRoots(windows.orEmpty(), null, rootInActiveWindow)
+        val roots = filterLikelyUssdRoots(buildCandidateRoots(windows.orEmpty(), null, rootInActiveWindow))
         if (roots.isEmpty()) {
             return false
         }
@@ -541,7 +548,7 @@ class SarifAccessibilityService : AccessibilityService() {
             return false
         }
 
-        val mode = automationMode()
+        val mode = currentModeForRecovery()
         val transactionType = when (mode) {
             MODE_BALANCE_CHECK -> "balance_check"
             MODE_DARA -> "bank_deposit"
@@ -806,6 +813,41 @@ class SarifAccessibilityService : AccessibilityService() {
 
     private fun automationMode(): String {
         return prefs().getString("automation_mode", MODE_DIRECT).orEmpty()
+    }
+
+    private fun currentModeForRecovery(): String {
+        val mode = prefs().getString("automation_mode", "").orEmpty()
+        if (mode.isNotBlank()) {
+            return mode
+        }
+        return when (activeOwnedUssdFlow()) {
+            "BALANCE_CHECK" -> MODE_BALANCE_CHECK
+            "BANK_DEPOSIT" -> MODE_DARA
+            "DIRECT_TRANSFER" -> MODE_DIRECT
+            else -> ""
+        }
+    }
+
+    private fun activeOwnedUssdFlow(): String {
+        return prefs().getString("active_ussd_session_flow", "").orEmpty()
+    }
+
+    private fun hasActiveOwnedUssdSession(): Boolean {
+        val prefs = prefs()
+        if (!prefs.getBoolean("active_ussd_session_owned", false)) {
+            return false
+        }
+        val sessionId = prefs.getString("active_ussd_session_id", "").orEmpty()
+        val startedAt = prefs.getLong("active_ussd_session_started_at", 0L)
+        if (sessionId.isBlank() || startedAt <= 0L) {
+            return false
+        }
+        val age = System.currentTimeMillis() - startedAt
+        if (age > OWNED_USSD_SESSION_MAX_MS) {
+            debugLog("Owned USSD session context ignored after bounded lifetime flow=${activeOwnedUssdFlow()}")
+            return false
+        }
+        return true
     }
 
     private fun daraState(): String {
@@ -1323,6 +1365,7 @@ class SarifAccessibilityService : AccessibilityService() {
         private const val MAX_DARA_RETRIES = 3
         private const val DARA_TRANSITION_GRACE_MS = 12_000L
         private const val FINAL_RESULT_UNKNOWN_GRACE_MS = 12_000L
+        private const val OWNED_USSD_SESSION_MAX_MS = 5 * 60 * 1000L
         private const val UNKNOWN_USSD_RESULT_REASON = "unknown_or_unexpected_ussd_result"
         @Volatile
         private var instance: SarifAccessibilityService? = null
