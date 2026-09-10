@@ -4,7 +4,7 @@ This folder is a static download site for SarifPro. It can be hosted for free on
 
 ## Current APK
 
-The page currently downloads `./SarifPro-1.0.37.apk` from the same hosted folder.
+The page currently downloads `./SarifPro-1.0.45.apk` from the same hosted folder.
 
 ## Recommended Free Setup
 
