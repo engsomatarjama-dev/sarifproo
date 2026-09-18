@@ -16,7 +16,7 @@ import {buildTransferDedupeKey} from '../services/DuplicateTransferPolicy';
 import {ussdSessionLockService} from '../services/UssdSessionLockService';
 import {timingLogService} from '../services/TimingLogService';
 
-class PeriodicBalanceCheckerService {
+export class PeriodicBalanceCheckerService {
   private running = false;
   private continuousModeLogged = false;
   private continuousTimer?: ReturnType<typeof setTimeout>;
@@ -270,6 +270,13 @@ class PeriodicBalanceCheckerService {
       this.currentCycleId = undefined;
       this.currentCycleStartedAt = undefined;
       void loggingService.log('system', 'Automation Returned To Idle');
+      // The 30s failed-cycle backoff already used for every other failure
+      // reason applies here unchanged -- reused, not replaced, so a
+      // dismissed MMI/network dialog gets a short controlled retry rather
+      // than either a tight retry loop or an indefinitely stuck cycle.
+      if (failedCycle && (this.lastError ?? '').includes('mmi_network_error')) {
+        void loggingService.log('system', 'USSD_MMI_BALANCE_RETRY_SCHEDULED');
+      }
       this.scheduleContinuousCycle(failedCycle ? 30_000 : 0);
     }
   }

@@ -66,6 +66,16 @@ class SarifAccessibilityService : AccessibilityService() {
 
     private fun tryHandleAutomation(source: String) {
         if (!isAutomationArmed()) {
+            // The short native arm window (20-90s) can expire before a slow
+            // network's terminal MMI/connection-problem dialog even appears.
+            // This narrow path is intentionally separate from the normal,
+            // arming-gated automation below: it never fills PIN fields, never
+            // advances a USSD menu, and only ever looks for one specific,
+            // already-owned terminal error dialog to dismiss. It must not
+            // (and does not) become a substitute for isAutomationArmed().
+            if (MmiRecoveryPolicy.isWithinOwnershipWindow(rawAutomationMode(), armedUntil(), System.currentTimeMillis())) {
+                tryHandleOwnedTerminalMmiError(source)
+            }
             return
         }
         lastScreenProcessedAt = System.currentTimeMillis()
@@ -80,6 +90,97 @@ class SarifAccessibilityService : AccessibilityService() {
         } else {
             tryHandlePinEntry(source)
         }
+    }
+
+    /**
+     * Narrow terminal MMI/connection-problem dialog recovery. Reachable only
+     * when isAutomationArmed() is false AND
+     * MmiRecoveryPolicy.isWithinOwnershipWindow() has already confirmed a
+     * SarifPro flow was armed and has not yet reached any existing disarm
+     * point. The safety boundary this operates under:
+     *   1. SarifPro currently owns an unresolved USSD interaction
+     *      (isWithinOwnershipWindow, verified by the caller before this is
+     *      invoked at all).
+     *   2. the visible window/root belongs to the Android phone/USSD
+     *      context (filterLikelyUssdRoots -- the same check every existing
+     *      handler in this file already uses).
+     *   3. that SAME root contains a recognized terminal MMI/network error
+     *      (MmiRecoveryPolicy.looksLikeOwnedMmiNetworkError, checked against
+     *      each root's own text individually, never the union of all
+     *      visible roots' text).
+     *   4. the OK button is located and clicked within that SAME root
+     *      (findByViewId(root, ...) -- never a different root's button).
+     * Never falls back to keyword-based button search the way
+     * clickResultDismiss()/clickSafeIdleDismiss() do -- this path only ever
+     * acts on the exact android:id/button1 resource id the physical report
+     * confirmed, since a keyword fallback would risk clicking a button in a
+     * dialog this function never verified matches.
+     */
+    private fun tryHandleOwnedTerminalMmiError(source: String): Boolean {
+        val roots = filterLikelyUssdRoots(buildCandidateRoots(windows.orEmpty(), null, rootInActiveWindow))
+        if (roots.isEmpty()) {
+            return false
+        }
+
+        for (root in roots) {
+            val rootText = collectReadableText(root)
+            val normalized = normalizeFinalResultText(rootText)
+            if (!MmiRecoveryPolicy.looksLikeOwnedMmiNetworkError(normalized)) {
+                continue
+            }
+
+            val button = findByViewId(root, CONFIRM_BUTTON_VIEW_IDS)
+            if (button == null || !button.isEnabled || !button.isClickable) {
+                continue
+            }
+
+            if (!allowScreenAction(OWNED_MMI_RECOVERY_ACTION_STATE, normalized)) {
+                return false
+            }
+
+            infoLog("USSD_MMI_ERROR_DETECTED source=$source mode=${automationMode()}")
+
+            val transactionType = when (automationMode()) {
+                MODE_BALANCE_CHECK -> "unknown"
+                MODE_DARA -> "bank_deposit"
+                else -> "direct_transfer"
+            }
+            storeFinalResult(rootText, "failed", transactionType, extractFailureReason(normalized), extractErrorCode(normalized))
+
+            val clicked = button.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            if (!clicked) {
+                return false
+            }
+            infoLog("USSD_MMI_OK_CLICKED source=$source mode=${automationMode()}")
+
+            prefs().edit()
+                .putString("final_result_state", RESULT_DISMISSED)
+                .putBoolean("final_result_dismissed", true)
+                .apply()
+            when (automationMode()) {
+                MODE_BALANCE_CHECK -> setBalanceState(BALANCE_FAILED)
+                MODE_DARA -> setDaraState(DARA_FAILED)
+                else -> setDirectState(DIRECT_TRANSFER_FAILED)
+            }
+            // Deliberately not calling disarmAutomation() here: popup
+            // disappearance is verified independently by the existing
+            // JS-side UssdSessionLockService.release() lifecycle (via the
+            // armed-independent isUssdWindowVisible()/
+            // dismissVisibleUssdWindow() bridge calls), not by this click's
+            // return value. Per the Sprint 4 safety boundary: do not assume
+            // the dialog is gone just because ACTION_CLICK returned true,
+            // and do not release lock/session state here at all -- that
+            // remains the existing lock services' job once they confirm the
+            // window is genuinely gone. Leaving automation_mode set also
+            // means allowScreenAction's dedupe window (not a full
+            // disarm) is what prevents a rapid re-click loop if this same
+            // dialog is somehow still visible moments later; a genuinely
+            // stuck dialog remains eligible for another attempt on a later
+            // poll tick, exactly like every existing dismiss path in this
+            // file.
+            return true
+        }
+        return false
     }
 
     private fun tryHandlePinEntry(source: String) {
@@ -739,6 +840,17 @@ class SarifAccessibilityService : AccessibilityService() {
         return prefs().getString("automation_mode", MODE_DIRECT).orEmpty()
     }
 
+    // Unlike automationMode(), this has no default -- an absent/blank value
+    // must read as blank, not as MODE_DIRECT, so MmiRecoveryPolicy can tell
+    // "nothing was ever armed" apart from "a direct transfer was armed."
+    private fun rawAutomationMode(): String {
+        return prefs().getString("automation_mode", "").orEmpty()
+    }
+
+    private fun armedUntil(): Long {
+        return prefs().getLong("armed_until", 0L)
+    }
+
     private fun daraState(): String {
         return prefs().getString("dara_state", DARA_WAIT_PIN).orEmpty()
     }
@@ -792,7 +904,18 @@ class SarifAccessibilityService : AccessibilityService() {
 
     private fun disarmAutomation() {
         resetScreenFingerprint()
-        prefs().edit().putLong("armed_until", 0L).apply()
+        prefs().edit()
+            .putLong("armed_until", 0L)
+            // Clearing automation_mode here (every genuine completion path
+            // already calls disarmAutomation: success, a recognized
+            // failure, or retry exhaustion) is what keeps
+            // MmiRecoveryPolicy.isWithinOwnershipWindow from ever treating a
+            // session that already concluded as still unresolved. Nothing
+            // else depends on automation_mode surviving a disarm: the JS
+            // side's getAutomationHealth().mode is display/logging only,
+            // never branched on.
+            .putString("automation_mode", "")
+            .apply()
     }
 
     private fun extendAutomation(durationMs: Long) {
@@ -858,6 +981,14 @@ class SarifAccessibilityService : AccessibilityService() {
         if (BuildConfig.DEBUG) {
             Log.d(TAG, message)
         }
+    }
+
+    // Unlike debugLog(), not gated behind BuildConfig.DEBUG: physical
+    // validation of a release candidate (the only build type this app ships
+    // for testing) needs these diagnostic markers visible in logcat, and
+    // debugLog() is compiled out entirely in release builds.
+    private fun infoLog(message: String) {
+        Log.i(TAG, message)
     }
 
     private fun filterRelevantRoots(roots: List<AccessibilityNodeInfo>): List<AccessibilityNodeInfo> {
@@ -1251,6 +1382,7 @@ class SarifAccessibilityService : AccessibilityService() {
         private const val DARA_TRANSITION_GRACE_MS = 12_000L
         private const val FINAL_RESULT_UNKNOWN_GRACE_MS = 12_000L
         private const val UNKNOWN_USSD_RESULT_REASON = "unknown_or_unexpected_ussd_result"
+        private const val OWNED_MMI_RECOVERY_ACTION_STATE = "OWNED_MMI_RECOVERY"
         @Volatile
         private var instance: SarifAccessibilityService? = null
 

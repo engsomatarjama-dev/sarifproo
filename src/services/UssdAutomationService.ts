@@ -11,7 +11,7 @@ import {UssdFlow, ussdSessionLockService} from './UssdSessionLockService';
 const DARA_SALAAM_USSD = '*800#';
 const BANK_PIN_PATTERN = /^\d{6}$/;
 
-class UssdAutomationService {
+export class UssdAutomationService {
   buildBalanceUssd(settings: AppSettings, amount: number) {
     return buildAccountTransferUssd(settings, amount);
   }
@@ -73,6 +73,10 @@ class UssdAutomationService {
         const result = await this.readFinalResult();
         if (result.dismissed && result.status) {
           ussdSessionLockService.markResponseReceived('failed');
+        }
+        if (result.dismissed && this.isNetworkMmiError(result)) {
+          await loggingService.log('system', 'USSD_MMI_DIALOG_CLEARED');
+          throw new Error('Balance check automation failed: mmi_network_error');
         }
         throw new Error('Balance check automation failed.');
       }
@@ -293,9 +297,30 @@ class UssdAutomationService {
     if (text.includes('invalid menu') || text.includes('please select valid option')) {
       await loggingService.log('transaction_failed', 'Invalid menu detected');
     }
-    if (text.includes('invalid mmi') || text.includes('mmi code')) {
+    if (this.isNetworkMmiError(result)) {
       await loggingService.log('transaction_failed', 'Invalid MMI code detected');
+      await loggingService.log('system', 'USSD_MMI_DIALOG_CLEARED');
     }
+  }
+
+  // Deliberately narrow -- the same terminal MMI/network error classes the
+  // native extractErrorCode() already tags as invalid_mmi, network_error,
+  // or connection_problem (with a text-based fallback for safety, since
+  // errorCode is only populated once a result is fully classified). Money-
+  // moving flows never auto-resend based on this: it only identifies the
+  // failure class for logging/dashboard purposes, exactly like every other
+  // errorCode this app already surfaces.
+  private isNetworkMmiError(result: UssdFinalResult) {
+    if (result.errorCode === 'invalid_mmi' || result.errorCode === 'network_error' || result.errorCode === 'connection_problem') {
+      return true;
+    }
+    const text = `${result.failureReason || ''} ${result.message || ''}`.toLowerCase();
+    return (
+      text.includes('invalid mmi') ||
+      text.includes('mmi code') ||
+      text.includes('connection problem') ||
+      text.includes('network error')
+    );
   }
 
   private async readFinalResult(): Promise<UssdFinalResult> {
