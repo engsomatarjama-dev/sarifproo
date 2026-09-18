@@ -9,14 +9,50 @@ export const normalizeUssdAmount = (amount: number) => {
   return decimalPart > 0 ? `${wholePart}*${String(decimalPart).padStart(2, '0')}` : String(wholePart);
 };
 
-export const truncateToTwoDecimals = (value: number): number => Math.floor(value * 100) / 100;
+/**
+ * Converts a finite number to integer minor units (cents) by truncating --
+ * never rounding -- to two decimal places, without going through a
+ * `value * 100` floating-point multiplication. `Math.floor(value * 100)`
+ * is not safe for money: binary floating-point cannot represent most
+ * decimal fractions exactly, so multiplying by 100 can land a hair below
+ * the intended integer (e.g. 2.01 * 100 === 200.99999999999997), silently
+ * truncating an already-exact two-decimal value one cent low. Parsing the
+ * number's own decimal string instead only ever does exact integer
+ * arithmetic (whole * 100 + fractional cents), which has no such failure
+ * mode for realistic money magnitudes. Returns undefined for non-finite
+ * input or a value whose decimal string can't be parsed as a plain
+ * (optionally negative) decimal -- e.g. anything JS renders in
+ * exponential notation -- so callers fail closed exactly as before.
+ */
+export const parseMoneyToMinorUnits = (value: number): number | undefined => {
+  if (!Number.isFinite(value)) {
+    return undefined;
+  }
+  const negative = value < 0;
+  const match = Math.abs(value).toString().match(/^(\d+)(?:\.(\d+))?$/);
+  if (!match) {
+    return undefined;
+  }
+  const wholeUnits = Number(match[1]);
+  const fractionalDigits = (match[2] ?? '').padEnd(2, '0').slice(0, 2);
+  const minorUnits = wholeUnits * 100 + Number(fractionalDigits);
+  return negative ? -minorUnits : minorUnits;
+};
+
+export const truncateToTwoDecimals = (value: number): number => {
+  const minorUnits = parseMoneyToMinorUnits(value);
+  return minorUnits === undefined ? NaN : minorUnits / 100;
+};
 
 export const splitTransferAmount = (value: number) => {
-  const normalized = truncateToTwoDecimals(value);
-  const cents = Math.floor(normalized * 100 + 0.000001);
+  const minorUnits = parseMoneyToMinorUnits(value);
+  if (minorUnits === undefined) {
+    return {wholePart: 0, decimalPart: 0};
+  }
+  const absoluteMinorUnits = Math.abs(minorUnits);
   return {
-    wholePart: Math.floor(cents / 100),
-    decimalPart: cents % 100,
+    wholePart: Math.floor(absoluteMinorUnits / 100),
+    decimalPart: absoluteMinorUnits % 100,
   };
 };
 
