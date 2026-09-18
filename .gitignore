@@ -27,9 +27,11 @@ github-pages-sarifproo/
 old_apk_versions/
 *.zip
 
-# Local screenshots/debug captures
+# Local screenshots/debug captures (root-level only -- do not match tracked
+# Android resource/config XML under android/app/src/main/res or
+# AndroidManifest.xml)
 *.png
-*.xml
+/*.xml
 apk-manifest.bin
 
 # Other local projects in this workspace
