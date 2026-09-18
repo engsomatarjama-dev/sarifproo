@@ -2,6 +2,7 @@ import {accessibilityNative} from '../native/SarifNative';
 import {loggingService} from './LoggingService';
 import {transactionRepository} from '../repositories/TransactionRepository';
 import {AUTOMATION_LOCK_TIMEOUT_MS} from './DuplicateTransferPolicy';
+import {ussdSessionLockService} from './UssdSessionLockService';
 
 export type AutomationLockState = 'IDLE' | 'BUSY' | 'RECOVERING';
 
@@ -25,7 +26,7 @@ export interface AutomationJobDescriptor {
   destinationAccount?: string;
 }
 
-class AutomationLockService {
+export class AutomationLockService {
   private state: AutomationLockState = 'IDLE';
   private activeJob?: AutomationJobDescriptor & {startedAt: number; externalRelease: boolean};
   private timeout?: ReturnType<typeof setTimeout>;
@@ -61,8 +62,11 @@ class AutomationLockService {
   async acquire(job: AutomationJobDescriptor) {
     if (this.state !== 'IDLE') {
       if (this.isStale()) {
-        await loggingService.log('system', 'Stale lock cleared');
-        await this.recover('stale_lock_cleared');
+        await loggingService.log('system', 'Stale lock detected');
+        const recovered = await this.recover('stale_lock_cleared');
+        if (recovered) {
+          await loggingService.log('system', 'Stale lock cleared');
+        }
       }
     }
 
@@ -105,11 +109,28 @@ class AutomationLockService {
     this.onIdle?.();
   }
 
+  /**
+   * Returns true only once the automation lock has actually been released
+   * (native state reset and the job cleared). Returns false when recovery
+   * was deferred because the USSD session this job owns is still active or
+   * a USSD/phone window is still on screen -- a bare age threshold is not
+   * proof that the underlying USSD interaction has ended.
+   */
   async recover(reason = 'automation_timeout') {
     if (!this.activeJob) {
       this.state = 'IDLE';
-      return;
+      return false;
     }
+
+    if (await this.hasUnresolvedUssdInteraction()) {
+      this.state = 'RECOVERING';
+      await loggingService.log(
+        'system',
+        'Automation lock stale recovery deferred: USSD session still active or window visible',
+      );
+      return false;
+    }
+
     this.state = 'RECOVERING';
     await loggingService.log('transaction_failed', `Automation timeout recovery started: ${reason}`);
     if (this.activeJob.reference && this.activeJob.type !== 'balance_check') {
@@ -126,14 +147,13 @@ class AutomationLockService {
     } catch {
       // Native reset is best effort; lock release must still continue.
     }
-    const jobId = this.activeJob.id;
     this.clearTimeout();
     this.activeJob = undefined;
     this.state = 'IDLE';
     await loggingService.log('system', 'Automation state reset');
     await loggingService.log('system', 'Automation lock released');
     this.onIdle?.();
-    return jobId;
+    return true;
   }
 
   async releaseIfStale(reason: string, thresholdMs: number) {
@@ -141,9 +161,32 @@ class AutomationLockService {
       return false;
     }
     await loggingService.log('system', 'Stale automation lock detected');
-    await this.recover(reason);
-    await loggingService.log('system', 'Automation lock released');
-    return true;
+    const recovered = await this.recover(reason);
+    if (recovered) {
+      await loggingService.log('system', 'Automation lock released');
+    }
+    return recovered;
+  }
+
+  /**
+   * A bare automation-lock age threshold is stale bookkeeping evidence only.
+   * Before destroying native USSD ownership (resetAutomation) we must also
+   * prove the USSD session this job started has actually ended: the JS
+   * session lock is idle AND no USSD/phone window is currently visible.
+   * Reuses UssdSessionLockService's own state and the same native
+   * window-visibility signal it already relies on for its own stale
+   * recovery, rather than introducing a second source of truth.
+   */
+  private async hasUnresolvedUssdInteraction() {
+    if (ussdSessionLockService.isActive()) {
+      return true;
+    }
+    try {
+      return await accessibilityNative.isUssdWindowVisible();
+    } catch {
+      // If visibility cannot be determined, do not assume it is safe to reset.
+      return true;
+    }
   }
 
   private armTimeout(jobId: string) {
