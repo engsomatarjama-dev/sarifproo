@@ -38,6 +38,14 @@ class TransactionConfirmationService {
     return confirmationSmsParserService.parse(body);
   }
 
+  // Screen-first verification policy (see SARIFPRO_SCREEN_VERIFICATION_REPORT.md):
+  // CONFIRMED_SUCCESS and CONFIRMED_FAILURE are both high-confidence terminal
+  // screen classifications already produced upstream (native classifyFinalStatus /
+  // TerminalErrorClassifier) -- both finalize immediately and never enter the
+  // 898 wait. Only a genuinely ambiguous screen (status === 'unknown_result',
+  // the UNKNOWN case) falls through to the 898 fallback/reconciliation window
+  // below. UNKNOWN must never be treated as a confirmed failure just to save
+  // time, and must never be treated as success without independent evidence.
   async startAwaitingConfirmation(reference: string, ussdResult: UssdFinalResult) {
     if (
       ussdResult.status === 'completed' &&
@@ -45,13 +53,15 @@ class TransactionConfirmationService {
     ) {
       await transactionRepository.completeFromUssdResult(reference, ussdResult);
       await loggingService.log('transaction_completed', 'Transaction completed from USSD success result');
+      await loggingService.log('system', 'TRANSFER_SCREEN_SUCCESS_CONFIRMED');
       await loggingService.log('system', '898 confirmation remains optional after USSD success');
       await dashboardService.refresh();
       await automationLockService.release(reference);
+      await loggingService.log('system', 'TRANSFER_SCREEN_CONFIRMED_LOCK_RELEASED');
       return;
     }
 
-    if (ussdResult.status === 'failed' || ussdResult.status === 'unknown_result') {
+    if (ussdResult.status === 'failed') {
       await transactionRepository.updateResult(reference, {
         status: ussdResult.status,
         transactionType: ussdResult.transactionType,
@@ -61,11 +71,17 @@ class TransactionConfirmationService {
         completedAt: Date.now(),
       });
       await loggingService.log('transaction_failed', 'Terminal USSD error finalized without 898 confirmation wait');
+      await loggingService.log('system', 'TRANSFER_SCREEN_FAILURE_CONFIRMED');
       await dashboardService.refresh();
       await automationLockService.release(reference);
       return;
     }
 
+    // ussdResult.status === 'unknown_result' (or any other non-terminal
+    // value): the screen did not give unambiguous evidence either way.
+    // Preserve the existing 898 fallback/reconciliation mechanism instead of
+    // guessing -- this is the only path that still awaits confirmation.
+    await loggingService.log('system', 'TRANSFER_SCREEN_RESULT_UNKNOWN');
     const now = Date.now();
     const started = await transactionRepository.markAwaitingConfirmation(
       reference,
@@ -79,6 +95,7 @@ class TransactionConfirmationService {
       return;
     }
     automationLockService.markExternalRelease(reference);
+    await loggingService.log('system', 'TRANSFER_898_FALLBACK_STARTED');
     await loggingService.log('system', 'Awaiting confirmation started');
     await this.retryPendingConfirmations();
     this.scheduleExpiry(reference, CONFIRMATION_WINDOW_MS);
@@ -193,6 +210,7 @@ class TransactionConfirmationService {
     this.clearTimer(match.reference);
     await loggingService.log('transaction_completed', 'Confirmation matched');
     await loggingService.log('transaction_completed', 'Transaction completed via 898 confirmation');
+    await loggingService.log('system', 'TRANSFER_898_RECONCILED');
     if (overridden) {
       await loggingService.log('transaction_completed', 'Transaction overridden from failed to completed');
     }
