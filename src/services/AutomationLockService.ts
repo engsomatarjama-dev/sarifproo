@@ -30,7 +30,11 @@ export class AutomationLockService {
   private state: AutomationLockState = 'IDLE';
   private activeJob?: AutomationJobDescriptor & {startedAt: number; externalRelease: boolean};
   private timeout?: ReturnType<typeof setTimeout>;
-  private onIdle?: () => void;
+  // Multiple independent consumers need to know when the lock frees --
+  // AutomationQueueService (existing) and, as of Sprint 5,
+  // PeriodicBalanceCheckerService's deferred-cycle re-arm. A single
+  // overwritable callback would silently drop whichever registered first.
+  private idleListeners: Array<() => void> = [];
 
   getState() {
     return this.state;
@@ -56,7 +60,17 @@ export class AutomationLockService {
   }
 
   setIdleCallback(callback: () => void) {
-    this.onIdle = callback;
+    this.addIdleListener(callback);
+  }
+
+  addIdleListener(callback: () => void) {
+    this.idleListeners.push(callback);
+  }
+
+  private notifyIdle() {
+    for (const listener of this.idleListeners) {
+      listener();
+    }
   }
 
   async acquire(job: AutomationJobDescriptor) {
@@ -106,7 +120,7 @@ export class AutomationLockService {
     this.activeJob = undefined;
     this.state = 'IDLE';
     await loggingService.log('system', 'Automation lock released');
-    this.onIdle?.();
+    this.notifyIdle();
   }
 
   /**
@@ -152,7 +166,7 @@ export class AutomationLockService {
     this.state = 'IDLE';
     await loggingService.log('system', 'Automation state reset');
     await loggingService.log('system', 'Automation lock released');
-    this.onIdle?.();
+    this.notifyIdle();
     return true;
   }
 

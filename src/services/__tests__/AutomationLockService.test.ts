@@ -158,3 +158,70 @@ describe('AutomationLockService stale recovery vs. active USSD ownership', () =>
     );
   });
 });
+
+describe('AutomationLockService multi-listener idle notifications (Sprint 5)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({now: 1_000_000});
+    jest.clearAllMocks();
+    mockedLogging.log.mockResolvedValue(undefined);
+    mockedTransactions.updateResult.mockResolvedValue(undefined);
+    mockedAccessibility.resetAutomation.mockResolvedValue(undefined);
+    mockedAccessibility.isUssdWindowVisible.mockResolvedValue(false);
+    mockedUssdLock.isActive.mockReturnValue(false);
+  });
+
+  it('notifies every registered idle listener on release(), not just the first', async () => {
+    const service = new AutomationLockService();
+    const first = jest.fn();
+    const second = jest.fn();
+    service.addIdleListener(first);
+    service.addIdleListener(second);
+    await service.acquire(directTransferJob());
+
+    await service.release('job-1');
+
+    expect(first).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps setIdleCallback backward-compatible by registering it as one more listener alongside addIdleListener', async () => {
+    const service = new AutomationLockService();
+    const legacy = jest.fn();
+    const additional = jest.fn();
+    service.setIdleCallback(legacy);
+    service.addIdleListener(additional);
+    await service.acquire(directTransferJob());
+
+    await service.release('job-1');
+
+    expect(legacy).toHaveBeenCalledTimes(1);
+    expect(additional).toHaveBeenCalledTimes(1);
+  });
+
+  it('notifies all listeners on a successful stale recover(), the same as a plain release()', async () => {
+    const service = new AutomationLockService();
+    const listener = jest.fn();
+    service.addIdleListener(listener);
+    await service.acquire(directTransferJob());
+    mockedUssdLock.isActive.mockReturnValue(false);
+    mockedAccessibility.isUssdWindowVisible.mockResolvedValue(false);
+
+    const recovered = await service.recover('max_duration_exceeded');
+
+    expect(recovered).toBe(true);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not notify idle listeners when recovery is deferred, since the lock is not actually idle yet', async () => {
+    const service = new AutomationLockService();
+    const listener = jest.fn();
+    service.addIdleListener(listener);
+    await service.acquire(directTransferJob());
+    mockedUssdLock.isActive.mockReturnValue(true);
+
+    const recovered = await service.recover('max_duration_exceeded');
+
+    expect(recovered).toBe(false);
+    expect(listener).not.toHaveBeenCalled();
+  });
+});

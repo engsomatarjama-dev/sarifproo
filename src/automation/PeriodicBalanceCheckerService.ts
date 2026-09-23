@@ -11,6 +11,7 @@ import {automationCoordinator} from '../services/AutomationCoordinator';
 import {dashboardService} from '../services/DashboardService';
 import {transactionRepository} from '../repositories/TransactionRepository';
 import {transactionConfirmationService} from '../services/TransactionConfirmationService';
+import {automationLockService} from '../services/AutomationLockService';
 import {automationQueueService} from '../services/AutomationQueueService';
 import {buildTransferDedupeKey} from '../services/DuplicateTransferPolicy';
 import {ussdSessionLockService} from '../services/UssdSessionLockService';
@@ -26,6 +27,28 @@ export class PeriodicBalanceCheckerService {
   private lastCompletedAt?: number;
   private nextScheduledAt?: number;
   private lastError?: string;
+  // Set when a continuous-cycle attempt was blocked only because the
+  // previous cycle's own automation lock is still held (e.g. awaiting an
+  // 898 confirmation) -- not because monitoring was disabled or a genuine
+  // error occurred. Coalesces any number of redundant attempts (internal
+  // timer, background worker) into exactly one re-arm once the lock frees.
+  private pendingCycleRequested = false;
+
+  constructor() {
+    automationLockService.addIdleListener(() => this.onAutomationLockIdle());
+  }
+
+  private onAutomationLockIdle() {
+    if (!this.pendingCycleRequested) {
+      return;
+    }
+    this.pendingCycleRequested = false;
+    void loggingService.log('system', 'Deferred continuous cycle resuming now that automation lock is idle');
+    // scheduleContinuousCycle itself no-ops if monitoring was disabled or
+    // switched to interval mode in the meantime -- reusing that existing
+    // guard is what makes this safe to call unconditionally here.
+    this.scheduleContinuousCycle(0);
+  }
 
   getNextScheduledTimestamp() {
     const settings = useAppStore.getState().settings;
@@ -48,6 +71,7 @@ export class PeriodicBalanceCheckerService {
       lastCompletedAt: this.lastCompletedAt,
       nextScheduledAt: this.nextScheduledAt ?? this.getNextScheduledTimestamp(),
       lastError: this.lastError,
+      pendingCycleRequested: this.pendingCycleRequested,
     };
   }
 
@@ -66,7 +90,15 @@ export class PeriodicBalanceCheckerService {
 
   async tick() {
     const settings = useAppStore.getState().settings;
-    if (!settings.automationEnabled || !settings.periodicBalanceCheckerEnabled || this.running) {
+    if (!settings.automationEnabled || !settings.periodicBalanceCheckerEnabled) {
+      // Monitoring intentionally off (or not yet configured): a stale
+      // pending re-arm from before this state would otherwise fire the
+      // moment automation is re-enabled, which is not what "intentionally
+      // stopped" should mean.
+      this.pendingCycleRequested = false;
+      return;
+    }
+    if (this.running) {
       return;
     }
 
@@ -85,6 +117,15 @@ export class PeriodicBalanceCheckerService {
       }
     }
 
+    if (this.pendingCycleRequested) {
+      // A previous attempt already deferred and is waiting on
+      // onAutomationLockIdle() to re-arm it -- this attempt (the internal
+      // timer, or the 6s background worker) is redundant. Coalesce rather
+      // than repeat the same busy check and risk a second competing timer.
+      void loggingService.log('system', 'CONTINUOUS_CYCLE_ALREADY_PENDING');
+      return;
+    }
+
     const canRun = await subscriptionGuardService.canRunAutomation();
     if (!canRun) {
       return;
@@ -95,7 +136,8 @@ export class PeriodicBalanceCheckerService {
       return;
     }
 
-    await automationQueueService.enqueue({
+    void loggingService.log('system', 'CONTINUOUS_CYCLE_REQUESTED');
+    const enqueueResult = await automationQueueService.enqueue({
       id: `balance-check-${Date.now()}`,
       type: 'balance_check',
       priority: 4,
@@ -117,6 +159,18 @@ export class PeriodicBalanceCheckerService {
         await this.run();
       },
     });
+
+    if (enqueueResult.status === 'duplicate' || enqueueResult.status === 'skipped') {
+      // Expected, temporary rejection -- the previous cycle (most often:
+      // still awaiting an 898 confirmation via markExternalRelease) has not
+      // finished yet. This is not a failure and must not be treated as one:
+      // record intent and let onAutomationLockIdle() re-arm exactly once,
+      // instead of silently letting continuous mode's own scheduling chain
+      // go dead until the unrelated 6s background worker happens to retry
+      // after the lock frees.
+      this.pendingCycleRequested = true;
+      void loggingService.log('system', `CONTINUOUS_CYCLE_DEFERRED_BUSY status=${enqueueResult.status}`);
+    }
   }
 
   async run() {
@@ -130,6 +184,7 @@ export class PeriodicBalanceCheckerService {
     this.currentCycleStartedAt = startedAt;
     this.lastStartedAt = startedAt;
     this.lastError = undefined;
+    void loggingService.log('system', 'CONTINUOUS_CYCLE_STARTED');
     let failedCycle = false;
     let pendingConfirmationReference: string | undefined;
     let pendingConfirmationType: 'direct_transfer' | 'bank_deposit' = 'direct_transfer';
@@ -270,6 +325,7 @@ export class PeriodicBalanceCheckerService {
       this.currentCycleId = undefined;
       this.currentCycleStartedAt = undefined;
       void loggingService.log('system', 'Automation Returned To Idle');
+      void loggingService.log('system', `CONTINUOUS_CYCLE_COMPLETED durationMs=${this.lastCompletedAt - startedAt} failed=${failedCycle}`);
       // The 30s failed-cycle backoff already used for every other failure
       // reason applies here unchanged -- reused, not replaced, so a
       // dismissed MMI/network dialog gets a short controlled retry rather
@@ -296,6 +352,7 @@ export class PeriodicBalanceCheckerService {
     }
     this.nextScheduledAt = Date.now() + delayMs;
     timingLogService.log('system', `next_balance_check_scheduled_at=${this.nextScheduledAt}`);
+    void loggingService.log('system', `CONTINUOUS_NEXT_CYCLE_SCHEDULED delayMs=${delayMs}`);
     this.continuousTimer = setTimeout(() => {
       this.continuousTimer = undefined;
       void this.tick().catch(error => {

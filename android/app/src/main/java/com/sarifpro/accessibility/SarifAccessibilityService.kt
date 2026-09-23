@@ -1296,7 +1296,18 @@ class SarifAccessibilityService : AccessibilityService() {
         if (clickSafeIdleDismiss(roots)) {
             return true
         }
-        return performGlobalAction(GLOBAL_ACTION_BACK)
+        // This is the pre-existing, text-agnostic fallback (distinct from
+        // Sprint 4's narrow tryHandleOwnedTerminalMmiError, which logs its
+        // own USSD_MMI_ERROR_DETECTED/USSD_MMI_OK_CLICKED). Logging only
+        // this branch -- not the common clickSafeIdleDismiss success above,
+        // which fires far more often during normal session cleanup and
+        // would otherwise be noisy -- so a physical test can tell which of
+        // the two mechanisms actually cleared a stuck dialog. Sprint 5:
+        // diagnostics only, behavior unchanged.
+        infoLog("USSD_WATCHDOG_FALLBACK_DISMISS_ATTEMPTED")
+        val dismissed = performGlobalAction(GLOBAL_ACTION_BACK)
+        infoLog("USSD_WATCHDOG_FALLBACK_DISMISS_RESULT success=$dismissed")
+        return dismissed
     }
 
     private fun eventTypeName(eventType: Int): String {

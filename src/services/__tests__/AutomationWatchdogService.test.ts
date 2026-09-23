@@ -83,6 +83,7 @@ const idleBalanceSnapshot = () => ({
   lastCompletedAt: undefined,
   nextScheduledAt: undefined,
   lastError: undefined,
+  pendingCycleRequested: false,
 });
 
 const idleAutomationLockSnapshot = () => ({
