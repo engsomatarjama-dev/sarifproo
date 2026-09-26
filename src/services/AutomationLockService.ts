@@ -105,6 +105,26 @@ export class AutomationLockService {
     }
   }
 
+  /**
+   * Some jobs (periodic balance checker, 898-balance-triggered transfer) do
+   * not know the transaction reference they'll eventually hand to
+   * TransactionConfirmationService until partway through their own run() --
+   * it's generated only once a transfer is actually decided, well after
+   * acquire() already stored the job under its own id (and, for the
+   * periodic checker, no reference at all). Without this, later
+   * release(reference)/markExternalRelease(reference) calls using that
+   * transaction reference silently fail to match the active job at all,
+   * because neither activeJob.id nor activeJob.reference equals it -- see
+   * SARIFPRO_BALANCE_PRIORITY_AND_SPEED_AUDIT.md P0-1. Call this once the
+   * transaction reference is known, before starting the 898 wait, so the
+   * two identities line back up.
+   */
+  updateActiveJobReference(reference: string) {
+    if (this.activeJob) {
+      this.activeJob.reference = reference;
+    }
+  }
+
   isExternalRelease(jobId: string) {
     return this.activeJob?.id === jobId && this.activeJob.externalRelease;
   }

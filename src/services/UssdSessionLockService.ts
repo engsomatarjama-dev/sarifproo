@@ -92,9 +92,8 @@ export class UssdSessionLockService {
       await delay(WAIT_STEP_MS);
     }
 
-    const clean = this.lastReleaseSafeForImmediateDial
-      ? await this.confirmCleanForImmediateDial()
-      : await this.waitForCleanDialerState();
+    const fastPath = this.lastReleaseSafeForImmediateDial;
+    const clean = fastPath ? await this.confirmCleanForImmediateDial() : await this.waitForCleanDialerState();
     if (!clean) {
       await loggingService.log('system', 'USSD lock prevented duplicate session');
       return undefined;
@@ -109,6 +108,9 @@ export class UssdSessionLockService {
       state: 'DIALING',
     };
     await loggingService.log('system', 'USSD session started');
+    if (flow === 'DIRECT_TRANSFER' || flow === 'BANK_DEPOSIT') {
+      void loggingService.log('system', `TRANSFER_LOCK_ACQUIRED branch=${fastPath ? 'fast' : 'slow'}`);
+    }
     return sessionId;
   }
 
@@ -292,10 +294,15 @@ export class UssdSessionLockService {
 
   private async confirmPopupDismissedAfterResult(sessionId?: string) {
     const startedAt = Date.now();
-    const timeoutMs =
-      this.session.currentFlow === 'BALANCE_CHECK'
-        ? BALANCE_CLEAN_RELEASE_CONFIRM_TIMEOUT_MS
-        : CLEAN_RELEASE_CONFIRM_TIMEOUT_MS;
+    const isBalanceCheck = this.session.currentFlow === 'BALANCE_CHECK';
+    const timeoutMs = isBalanceCheck ? BALANCE_CLEAN_RELEASE_CONFIRM_TIMEOUT_MS : CLEAN_RELEASE_CONFIRM_TIMEOUT_MS;
+    // This wait sits inside the same await chain the decision engine
+    // (PeriodicBalanceCheckerService.run()) is blocked on -- it completes
+    // BEFORE the caller ever sees the parsed balance, so it was previously
+    // invisible. See SARIFPRO_BALANCE_PRIORITY_AND_SPEED_AUDIT.md section 3/4.
+    if (isBalanceCheck) {
+      void loggingService.log('system', 'BALANCE_POPUP_CONFIRM_STARTED');
+    }
 
     while (Date.now() - startedAt < timeoutMs) {
       if (sessionId && this.session.sessionId !== sessionId) {
@@ -312,6 +319,9 @@ export class UssdSessionLockService {
       if (!visible) {
         await loggingService.log('system', 'USSD popup dismissed');
         timingLogService.log('system', `ussd_popup_disappeared_at=${Date.now()}`);
+        if (isBalanceCheck) {
+          void loggingService.log('system', `BALANCE_POPUP_CONFIRM_COMPLETED durationMs=${Date.now() - startedAt}`);
+        }
         return true;
       }
 
@@ -319,6 +329,9 @@ export class UssdSessionLockService {
       await delay(CLEAN_RELEASE_CONFIRM_STEP_MS);
     }
 
+    if (isBalanceCheck) {
+      void loggingService.log('system', `BALANCE_POPUP_CONFIRM_COMPLETED durationMs=${Date.now() - startedAt} timedOut=true`);
+    }
     return false;
   }
 
@@ -348,8 +361,12 @@ export class UssdSessionLockService {
   }
 
   private async releaseSession(safeForImmediateDial: boolean) {
+    const closedFlow = this.session.currentFlow;
     this.session = {isActive: false, state: 'IDLE'};
     this.lastReleaseSafeForImmediateDial = safeForImmediateDial;
+    if (closedFlow === 'BALANCE_CHECK') {
+      void loggingService.log('system', 'BALANCE_SESSION_CLOSED');
+    }
     if (safeForImmediateDial) {
       await loggingService.log('system', 'Session lock released immediately');
     }

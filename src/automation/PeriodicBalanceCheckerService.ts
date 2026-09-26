@@ -251,6 +251,7 @@ export class PeriodicBalanceCheckerService {
         return;
       }
 
+      void loggingService.log('system', 'TRANSFER_DECISION_CREATED');
       await this.saveCheck(originalBalance, balanceToTransfer, 'triggered_transfer', startedAt);
       await loggingService.log('transaction_completed', 'Transfer Started');
       const transaction: Transaction = {
@@ -297,6 +298,13 @@ export class PeriodicBalanceCheckerService {
         );
       }
 
+      // P0-1 fix (SARIFPRO_BALANCE_PRIORITY_AND_SPEED_AUDIT.md): this job was
+      // acquired with no `reference` at all (tick() enqueues it before any
+      // transfer reference exists). Without this, startAwaitingConfirmation's
+      // release(reference)/markExternalRelease(reference) calls below can
+      // never match this job's identity, silently defeating the UNKNOWN-holds-
+      // the-lock behavior.
+      automationLockService.updateActiveJobReference(reference);
       await transactionConfirmationService.startAwaitingConfirmation(reference, result);
       duplicateGuardService.rememberPeriodicBalanceTransfer(balanceToTransfer);
       void loggingService.log('system', 'Periodic balance transfer awaiting confirmation');

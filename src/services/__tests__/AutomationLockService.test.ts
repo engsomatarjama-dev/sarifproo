@@ -159,6 +159,52 @@ describe('AutomationLockService stale recovery vs. active USSD ownership', () =>
   });
 });
 
+describe('AutomationLockService.updateActiveJobReference (Balance-priority audit P0-1 fix)', () => {
+  beforeEach(() => {
+    jest.useFakeTimers({now: 1_000_000});
+    jest.clearAllMocks();
+    mockedLogging.log.mockResolvedValue(undefined);
+    mockedTransactions.updateResult.mockResolvedValue(undefined);
+    mockedAccessibility.resetAutomation.mockResolvedValue(undefined);
+    mockedAccessibility.isUssdWindowVisible.mockResolvedValue(false);
+    mockedUssdLock.isActive.mockReturnValue(false);
+  });
+
+  it('lets release(reference) match a job that was acquired with no reference at all, once updated', async () => {
+    const service = new AutomationLockService();
+    // Mirrors PeriodicBalanceCheckerService.tick()'s job descriptor: no
+    // `reference` field, since the transaction reference does not exist yet
+    // at acquire() time.
+    await service.acquire(directTransferJob({id: 'balance-check-1', type: 'balance_check', reference: undefined}));
+
+    // Before the fix, this would silently no-op: neither activeJob.id nor
+    // activeJob.reference (undefined) equals 'PBC-123'.
+    await service.release('PBC-123');
+    expect(service.getSnapshot().locked).toBe(true);
+
+    service.updateActiveJobReference('PBC-123');
+    await service.release('PBC-123');
+    expect(service.getSnapshot().locked).toBe(false);
+  });
+
+  it('lets markExternalRelease(reference) actually hold the lock for a job whose descriptor used a different reference', async () => {
+    const service = new AutomationLockService();
+    // Mirrors BalanceMonitoringEngine's job: descriptor reference is smsHash,
+    // but the transaction reference generated later is 'BAL-...'.
+    await service.acquire(directTransferJob({id: 'balance-sms-1', type: 'balance_direct_transfer', reference: 'sms-hash-abc'}));
+
+    service.updateActiveJobReference('BAL-456');
+    service.markExternalRelease('BAL-456');
+
+    expect(service.isExternalRelease('balance-sms-1')).toBe(true);
+  });
+
+  it('does nothing when there is no active job', () => {
+    const service = new AutomationLockService();
+    expect(() => service.updateActiveJobReference('REF-X')).not.toThrow();
+  });
+});
+
 describe('AutomationLockService multi-listener idle notifications (Sprint 5)', () => {
   beforeEach(() => {
     jest.useFakeTimers({now: 1_000_000});

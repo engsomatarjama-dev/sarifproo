@@ -11,6 +11,7 @@ import {makeDeterministicHash} from '../utils/sms';
 import {truncateToTwoDecimals} from '../utils/ussd';
 import {transactionConfirmationService} from '../services/TransactionConfirmationService';
 import {buildTransferDedupeKey} from '../services/DuplicateTransferPolicy';
+import {automationLockService} from '../services/AutomationLockService';
 
 class BalanceMonitoringEngine {
   async process(payload: SmsPayload) {
@@ -99,6 +100,12 @@ class BalanceMonitoringEngine {
         });
       }
       duplicateGuardService.rememberTransferNow();
+      // P0-1 fix (SARIFPRO_BALANCE_PRIORITY_AND_SPEED_AUDIT.md): the job this
+      // engine runs under was enqueued with reference=smsHash, but `reference`
+      // here is a separately-generated transaction reference (`BAL-...`) --
+      // without this, release(reference)/markExternalRelease(reference) below
+      // can never match the active job's identity.
+      automationLockService.updateActiveJobReference(reference);
       await transactionConfirmationService.startAwaitingConfirmation(reference, result);
       await loggingService.log('system', `Balance automation awaiting 898 confirmation after USSD result ${result.status}`);
       await notificationService.show('Awaiting confirmation', 'Waiting for 898 SMS confirmation.');

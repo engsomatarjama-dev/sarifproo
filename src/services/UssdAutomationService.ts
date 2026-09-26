@@ -55,12 +55,14 @@ export class UssdAutomationService {
         }
       }
       if (state === 'BALANCE_COMPLETE') {
+        void loggingService.log('system', 'BALANCE_CHECK_SCREEN_VISIBLE');
         const rawBalance = await accessibilityNative.getBalanceCheckResult();
         const resultMessage = await accessibilityNative.getBalanceCheckResultMessage();
         const balance = Number(rawBalance);
         if (!Number.isFinite(balance)) {
           throw new Error('Balance check result was invalid.');
         }
+        void loggingService.log('system', 'BALANCE_PARSED');
         ussdSessionLockService.markResponseReceived('completed');
         void loggingService.log('balance_detected', 'Balance result detected');
         timingLogService.log('system', `balance_result_detected_at=${Date.now()}`);
@@ -131,6 +133,7 @@ export class UssdAutomationService {
         await accessibilityNative.updateBankPin(settings.bankPin);
         await accessibilityNative.armDaraSalaamAutomation(formatTransferAmountForInput(amountToSend), 90000);
         await ussdNative.dialUssd(DARA_SALAAM_USSD);
+        void loggingService.log('system', 'TRANSFER_USSD_DIALED');
         ussdSessionLockService.markWaitingScreenVisible();
       }, 2);
 
@@ -211,6 +214,7 @@ export class UssdAutomationService {
         await accessibilityNative.setAutomationSpeed(settings.ussdAutomationSpeed);
         await accessibilityNative.armPinAutomation(20000);
         await ussdNative.dialUssd(ussd);
+        void loggingService.log('system', 'TRANSFER_USSD_DIALED');
         ussdSessionLockService.markWaitingScreenVisible();
       }, 2);
       await loggingService.log('ussd_dialed', `USSD dialed: ${redactUssd(ussd)}`);

@@ -113,6 +113,7 @@ jest.mock('../../services/TimingLogService', () => ({
 jest.mock('../../services/AutomationLockService', () => ({
   automationLockService: {
     addIdleListener: jest.fn(),
+    updateActiveJobReference: jest.fn(),
   },
 }));
 

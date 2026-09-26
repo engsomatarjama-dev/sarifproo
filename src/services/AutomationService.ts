@@ -87,6 +87,7 @@ class AutomationService {
     }
 
     if (is898Sender(payload.sender)) {
+      void loggingService.log('system', 'SMS_898_RECEIVED');
       const confirmationResult = await transactionConfirmationService.processSms(payload.sender, payload.body, payload.timestamp);
       if (confirmationResult.handled) {
         duplicateGuardService.rememberSmsHash(smsHash);
@@ -155,6 +156,9 @@ class AutomationService {
 
       if (looksLikeIncomingBalanceTrigger(payload.body) && looksLikeBalanceMessage(payload.body)) {
         const parsedBalance = smsParserService.parseBalance(payload.body);
+        if (parsedBalance) {
+          void loggingService.log('system', 'SMS_898_BALANCE_PARSED');
+        }
         await automationQueueService.enqueue({
           id: `balance-sms-${smsHash}-${Date.now()}`,
           type: settings.transferMethod === 'DARA_SALAAM_BANK' ? 'balance_bank_deposit' : 'balance_direct_transfer',
