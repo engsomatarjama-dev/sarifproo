@@ -289,6 +289,13 @@ export const SettingsScreen = () => {
         <PrimaryButton label="Change Security PIN" onPress={() => navigation.navigate('ChangeSecurityPin')} tone="neutral" />
       </Card>
 
+      <Card title="Diagnostics">
+        <Text style={[styles.helper, {color: colors.muted}]}>
+          View recent automation and timing events for troubleshooting. Never includes PINs, account numbers, or USSD content.
+        </Text>
+        <PrimaryButton label="View Logs" onPress={() => navigation.navigate('Logs')} tone="neutral" />
+      </Card>
+
       <PrimaryButton label="Save Settings" onPress={save} loading={saving} />
       <PrimaryButton label="Logout" onPress={logout} tone="danger" />
 
