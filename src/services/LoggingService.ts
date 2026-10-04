@@ -3,11 +3,8 @@ import {useAppStore} from '../store/useAppStore';
 import {LogEntry, LogType} from '../types';
 import {redactLogMessage} from '../utils/redaction';
 
-const LOG_REFRESH_THROTTLE_MS = 1500;
-
 class LoggingService {
   private writeQueue: Promise<void> = Promise.resolve();
-  private refreshTimer?: ReturnType<typeof setTimeout>;
 
   log(type: LogType, message: string) {
     const entry: LogEntry = {
@@ -20,21 +17,16 @@ class LoggingService {
         await logRepository.create(entry);
       })
       .catch(() => undefined);
-    this.scheduleRefresh();
+    // Deliberately no automatic store refresh here. The only consumer of the
+    // in-memory log list is the Logs screen, which refreshes itself while
+    // focused. Re-querying after every write ran on a single serial SQLite
+    // worker thread and, together with an unindexed ORDER BY, kept it
+    // saturated for most of every balance-check cycle (see
+    // SARIFPRO_POST_TRANSFER_RESUME_AUDIT.md).
     return Promise.resolve();
   }
 
-  private scheduleRefresh() {
-    if (this.refreshTimer) {
-      return;
-    }
-    this.refreshTimer = setTimeout(() => {
-      this.refreshTimer = undefined;
-      void this.refreshLogs();
-    }, LOG_REFRESH_THROTTLE_MS);
-  }
-
-  private async refreshLogs() {
+  async refreshLogs() {
     try {
       await this.writeQueue;
       const latest = await logRepository.list();

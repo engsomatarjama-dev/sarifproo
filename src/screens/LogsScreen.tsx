@@ -4,17 +4,26 @@ import {useFocusEffect} from '@react-navigation/native';
 import {Screen} from '../components/Screen';
 import {Card} from '../components/Card';
 import {useAppStore} from '../store/useAppStore';
-import {appStartupService} from '../services/AppStartupService';
+import {loggingService} from '../services/LoggingService';
 import {formatDateTime} from '../utils/format';
 import {useThemeColors} from '../hooks/useThemeColors';
+
+const LOGS_REFRESH_INTERVAL_MS = 3000;
 
 export const LogsScreen = () => {
   const colors = useThemeColors();
   const logs = useAppStore(state => state.logs);
 
+  // Logs are no longer re-queried after every write (that kept the SQLite
+  // worker saturated); this screen is the only consumer, so it refreshes
+  // itself, and only while focused.
   useFocusEffect(
     useCallback(() => {
-      void appStartupService.refreshAll();
+      void loggingService.refreshLogs();
+      const timer = setInterval(() => {
+        void loggingService.refreshLogs();
+      }, LOGS_REFRESH_INTERVAL_MS);
+      return () => clearInterval(timer);
     }, []),
   );
 

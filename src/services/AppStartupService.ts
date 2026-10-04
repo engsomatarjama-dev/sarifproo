@@ -8,6 +8,7 @@ import {dashboardService} from './DashboardService';
 import {automationService} from './AutomationService';
 import {logRepository} from '../repositories/LogRepository';
 import {loggingService} from './LoggingService';
+import {logRetentionService} from './LogRetentionService';
 import {notificationService} from './NotificationService';
 import {supabaseAuthService} from './SupabaseAuthService';
 import {appMetadataApiService} from './AppMetadataApiService';
@@ -68,6 +69,7 @@ class AppStartupService {
       useAppStore.getState().setLogs(await logRepository.list());
       await appMetadataApiService.recordHeartbeat();
       await loggingService.log('system', 'SarifPro startup completed');
+      logRetentionService.start();
       await notificationService.show('Automation started', 'SarifPro background monitoring is active.');
       this.authenticatedBootstrapped = true;
     })().finally(() => {
